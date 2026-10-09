@@ -109,6 +109,9 @@
           "attention": "Eingriff nötig",
           "rinsing": "Spült",
           "heating_up": "Heizt auf",
+          "brewing": "Bereitet zu",
+          "maintenance": "Pflegeprogramm",
+          "programming": "Programmiermodus",
           "busy": "Beschäftigt",
           "energy_saving": "Energiesparmodus",
           "ready": "Bereit"
@@ -143,6 +146,9 @@
     },
     "machine_offline": {
       "message": "Die Maschine ist nicht erreichbar."
+    },
+    "machine_busy": {
+      "message": "Die Maschine ist gerade beschäftigt (Zubereitung, Menü oder Pflegeprogramm)."
     },
     "product_blocked": {
       "message": "{product} kann gerade nicht zubereitet werden. Prüfe die Maschine auf aktive Meldungen."

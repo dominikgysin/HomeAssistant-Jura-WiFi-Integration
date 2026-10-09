@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+from .api import (
+    ACTIVITY_BREWING,
+    ACTIVITY_MAINTENANCE,
+    ACTIVITY_PROGRAMMING,
+)
 from .coordinator import JuraWifiData
 
 STATUS_OFFLINE = "offline"
 STATUS_ATTENTION = "attention"
 STATUS_RINSING = "rinsing"
 STATUS_HEATING_UP = "heating_up"
+STATUS_BREWING = "brewing"
+STATUS_MAINTENANCE = "maintenance"
+STATUS_PROGRAMMING = "programming"
 STATUS_BUSY = "busy"
 STATUS_ENERGY_SAVING = "energy_saving"
 STATUS_READY = "ready"
@@ -17,6 +25,9 @@ STATUSES = [
     STATUS_ATTENTION,
     STATUS_RINSING,
     STATUS_HEATING_UP,
+    STATUS_BREWING,
+    STATUS_MAINTENANCE,
+    STATUS_PROGRAMMING,
     STATUS_BUSY,
     STATUS_ENERGY_SAVING,
     STATUS_READY,
@@ -29,11 +40,24 @@ TRANSIENT_ALERTS = frozenset(
 )
 RINSING_ALERTS = frozenset({"coffee_rinsing", "system_filling", "system_emptying"})
 
+# What the machine is doing while it pushes progress frames; anything else it
+# reports that way is just "busy".
+ACTIVITY_STATUSES = {
+    ACTIVITY_BREWING: STATUS_BREWING,
+    ACTIVITY_MAINTENANCE: STATUS_MAINTENANCE,
+    ACTIVITY_PROGRAMMING: STATUS_PROGRAMMING,
+}
+
 
 def machine_status(data: JuraWifiData) -> str:
     """Return the status shown by the status sensor."""
+    if not data.online:
+        return STATUS_OFFLINE
+    # The alerts of the snapshot are outdated while the machine is busy.
+    if data.activity is not None:
+        return ACTIVITY_STATUSES.get(data.activity.kind, STATUS_BUSY)
     snapshot = data.snapshot
-    if not data.online or snapshot is None:
+    if snapshot is None:
         return STATUS_OFFLINE
     if snapshot.errors - TRANSIENT_ALERTS:
         return STATUS_ATTENTION

@@ -8,6 +8,9 @@
           "attention": "mdi:alert-circle",
           "rinsing": "mdi:water",
           "heating_up": "mdi:fire",
+          "brewing": "mdi:coffee",
+          "maintenance": "mdi:wrench",
+          "programming": "mdi:cog",
           "busy": "mdi:timer-sand",
           "energy_saving": "mdi:leaf",
           "ready": "mdi:coffee-maker"

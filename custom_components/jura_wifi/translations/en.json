@@ -109,6 +109,9 @@
           "attention": "Needs attention",
           "rinsing": "Rinsing",
           "heating_up": "Heating up",
+          "brewing": "Brewing",
+          "maintenance": "Maintenance",
+          "programming": "Programming mode",
           "busy": "Busy",
           "energy_saving": "Energy saving",
           "ready": "Ready"
@@ -143,6 +146,9 @@
     },
     "machine_offline": {
       "message": "The machine is not reachable."
+    },
+    "machine_busy": {
+      "message": "The machine is busy right now (brewing, in its menu or running a maintenance program)."
     },
     "product_blocked": {
       "message": "{product} cannot be brewed right now. Check the machine for active alerts."

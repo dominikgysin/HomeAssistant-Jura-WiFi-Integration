@@ -6,6 +6,7 @@ import dataclasses
 
 import pytest
 
+from custom_components.jura_wifi.api import MachineActivity
 from custom_components.jura_wifi.coordinator import JuraWifiData
 from custom_components.jura_wifi.status import machine_status
 
@@ -19,6 +20,12 @@ def _data(*, alerts: set[str], errors: set[str] | None = None, online: bool = Tr
         errors=frozenset(errors or ()),
     )
     return JuraWifiData(online=online, snapshot=snapshot)
+
+
+def _busy(kind: str, detail: str | None = None, *, online: bool = True):
+    return JuraWifiData(
+        online=online, snapshot=SNAPSHOT, activity=MachineActivity(kind, detail)
+    )
 
 
 @pytest.mark.parametrize(
@@ -35,8 +42,29 @@ def _data(*, alerts: set[str], errors: set[str] | None = None, online: bool = Tr
         (_data(alerts={"energy_safe"}), "energy_saving"),
         (_data(alerts={"heating_up"}, errors={"empty_tray"}), "attention"),
         (_data(alerts={"cleaning_alert"}), "ready"),
+        (_busy("brewing", "espresso"), "brewing"),
+        (_busy("maintenance", "cleaning"), "maintenance"),
+        (_busy("programming"), "programming"),
+        (_busy("busy", "warning"), "busy"),
+        (_busy("something_new"), "busy"),
+        (_busy("brewing", online=False), "offline"),
+        (
+            JuraWifiData(
+                online=True, snapshot=None, activity=MachineActivity("programming")
+            ),
+            "programming",
+        ),
     ],
 )
 def test_machine_status(data: JuraWifiData, expected: str) -> None:
-    """Map alert bits to the status shown to the user."""
+    """Map alert bits and the activity to the status shown to the user."""
     assert machine_status(data) == expected
+
+
+def test_activity_wins_over_outdated_alerts() -> None:
+    """The alerts of the last full poll say nothing while the machine is busy."""
+    data = dataclasses.replace(
+        _data(alerts=set(), errors={"fill_water"}),
+        activity=MachineActivity("brewing", "espresso"),
+    )
+    assert machine_status(data) == "brewing"

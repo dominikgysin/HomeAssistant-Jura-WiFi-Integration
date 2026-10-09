@@ -14,7 +14,8 @@ with JURA.
 | Area | State |
 | --- | --- |
 | JURA E8 (SD) with Wi-Fi Connect V2 | pairing, status, counters and maintenance values verified on a real machine (read-only) |
-| Home Assistant side (config flow, entities, offline handling) | 98 automated tests pass on Home Assistant 2025.10 and 2026.10; the integration was also loaded in a Home Assistant test instance against the real E8 (read-only) |
+| Home Assistant side (config flow, entities, offline handling) | 127 automated tests pass on Home Assistant 2025.10 and 2026.10; the integration was also loaded in a Home Assistant test instance against the real E8 (read-only) |
+| Busy machine (menu, brewing, maintenance program) | the machine then pushes progress frames instead of status frames; decoded with the library, covered by tests using one frame captured from a real E8 in its menu |
 | Model detection | article number announced by UDP broadcast (same network as the dongle only), article number or model list as fallback; the UDP part is **not yet verified against a real machine** |
 | Brewing | opt-in, **not yet tried on an E8 (SD)** through this integration |
 | Other models | profiles for ~330 variants are bundled, untested |
@@ -62,8 +63,8 @@ Home Assistant configuration and restart Home Assistant.
 
 | Entity | Notes |
 | --- | --- |
-| Model (sensor) | diagnostic; the exact model, e.g. `E8 (SDS)`. Attributes: article number, machine profile (e.g. `EF1120`), firmware if known, and how the model was found (`discovery`, `article` or `manual`). The device page shows the same as model, model ID and firmware. |
-| Status (sensor) | `offline`, `attention`, `rinsing`, `heating_up`, `busy`, `energy_saving`, `ready`. The raw alerts are available as attributes. |
+| Model (sensor) | diagnostic; the exact model, e.g. `E8 (SDS)`. Attributes: article number, machine profile (e.g. `EF1120`), firmware if known, and how the model was found (`discovery`, `article_number` or `manual`). The device page shows the same as model, model ID and firmware. |
+| Status (sensor) | `offline`, `attention`, `rinsing`, `heating_up`, `brewing`, `maintenance`, `programming`, `busy`, `energy_saving`, `ready`. The raw alerts are available as attributes; while the machine is brewing, running a maintenance program or showing its programming menu the attributes `activity` and `activity_detail` (drink or program) are set instead. |
 | Connection (binary sensor) | diagnostic; off while the machine does not answer |
 | Problem sensors | water tank empty, grounds container full/missing, drip tray full/missing, beans empty, cleaning / descaling / filter / milk system rinse / milk system cleaning due |
 | Total brews, one counter per drink | `total_increasing`, keep their last value while the machine is off |
@@ -94,6 +95,11 @@ shows up.
 - With the machine **switched off** the dongle is unreachable: the status shows
   `offline`. **Energy-saving mode** is fine, the dongle stays reachable and a
   brew wakes the machine up.
+- While the machine **brews, runs a maintenance program or shows its
+  programming menu** it does not send its status, only what it is doing. The
+  status then shows `brewing`, `maintenance` or `programming`, all other
+  entities keep the values of the last full poll, and the brew buttons refuse to
+  start another drink.
 - If the dongle gets a new IP address, use *Reconfigure* on the integration.
 - If the machine forgets the pairing (for example after a dongle reset) Home
   Assistant asks to pair again.

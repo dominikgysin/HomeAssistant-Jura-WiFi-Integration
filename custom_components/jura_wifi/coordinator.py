@@ -21,9 +21,11 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import (
     JuraWifiAuthError,
+    JuraWifiBusy,
     JuraWifiClient,
     JuraWifiConnectionError,
     JuraWifiError,
+    MachineActivity,
     MachineSnapshot,
 )
 from .const import (
@@ -41,10 +43,15 @@ type JuraWifiConfigEntry = ConfigEntry[JuraWifiCoordinator]
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class JuraWifiData:
-    """What the entities see: reachability plus the last known snapshot."""
+    """What the entities see: reachability, activity and the last known snapshot.
+
+    ``activity`` is set while the machine answers but only reports what it is
+    doing; the snapshot then still holds the values of the last full poll.
+    """
 
     online: bool
     snapshot: MachineSnapshot | None
+    activity: MachineActivity | None = None
 
 
 class JuraWifiCoordinator(DataUpdateCoordinator[JuraWifiData]):
@@ -98,6 +105,8 @@ class JuraWifiCoordinator(DataUpdateCoordinator[JuraWifiData]):
             raise ConfigEntryAuthFailed(
                 translation_domain=DOMAIN, translation_key="auth_failed"
             ) from err
+        except JuraWifiBusy as err:
+            return self._handle_busy(err)
         except JuraWifiConnectionError as err:
             return self._handle_unreachable(err)
         except JuraWifiError as err:
@@ -108,6 +117,19 @@ class JuraWifiCoordinator(DataUpdateCoordinator[JuraWifiData]):
             ) from err
         self._failures = 0
         return JuraWifiData(online=True, snapshot=snapshot)
+
+    def _handle_busy(self, err: JuraWifiBusy) -> JuraWifiData:
+        """Report what the machine is doing and keep the values of the last poll."""
+        _LOGGER.debug(
+            "Machine is busy: %s (%s)", err.activity.kind, err.activity.detail
+        )
+        self._failures = 0
+        previous = self.data
+        return JuraWifiData(
+            online=True,
+            snapshot=previous.snapshot if previous is not None else None,
+            activity=err.activity,
+        )
 
     def _handle_unreachable(self, err: JuraWifiConnectionError) -> JuraWifiData:
         """Tolerate a single failed poll, then report the machine as offline."""
@@ -139,6 +161,10 @@ class JuraWifiCoordinator(DataUpdateCoordinator[JuraWifiData]):
             if not data.online:
                 raise HomeAssistantError(
                     translation_domain=DOMAIN, translation_key="machine_offline"
+                )
+            if data.activity is not None:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN, translation_key="machine_busy"
                 )
             if data.snapshot is not None and product in data.snapshot.blocked_products:
                 raise ServiceValidationError(

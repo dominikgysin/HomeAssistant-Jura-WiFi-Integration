@@ -6,7 +6,7 @@ and has to run in an executor thread, never in the event loop.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 import contextlib
 import dataclasses
 import ipaddress
@@ -21,7 +21,10 @@ from jura_connect import (
     JuraClient,
     MachineProfile,
     PairingTimeout,
+    ProductProgress,
+    ProgressType,
     discover,
+    is_progress_frame,
     list_profile_codes,
     load_profile,
     lookup_by_article_number,
@@ -40,13 +43,50 @@ PAIRING_TIMEOUT = 60.0
 # The maintenance percent bank reports 0xFF for indicators a machine lacks.
 PERCENT_NOT_REPORTED = 0xFF
 
+ACTIVITY_BREWING = "brewing"
+ACTIVITY_MAINTENANCE = "maintenance"
+ACTIVITY_PROGRAMMING = "programming"
+ACTIVITY_BUSY = "busy"
+
+_ACTIVITY_BY_PROGRESS_TYPE = {
+    ProgressType.PRODUCT: ACTIVITY_BREWING,
+    ProgressType.PROCESS: ACTIVITY_MAINTENANCE,
+    ProgressType.P_MODE: ACTIVITY_PROGRAMMING,
+}
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class MachineActivity:
+    """What a machine is doing while it pushes progress instead of status frames.
+
+    ``kind`` is one of the ``ACTIVITY_*`` values. ``detail`` names the drink or
+    the maintenance program, or the raw progress state for anything else.
+    """
+
+    kind: str
+    detail: str | None = None
+
 
 class JuraWifiError(Exception):
     """Base class for errors raised by this module."""
 
 
 class JuraWifiConnectionError(JuraWifiError):
-    """The machine did not answer (switched off, asleep or busy)."""
+    """The machine did not answer (switched off or asleep)."""
+
+
+class JuraWifiBusy(JuraWifiError):
+    """The machine answers, but only reports what it is doing.
+
+    While it brews, runs a maintenance program or shows its programming menu the
+    machine pushes progress frames instead of the status frame that a poll waits
+    for. It is reachable, just not able to report its alerts and counters.
+    """
+
+    def __init__(self, activity: MachineActivity) -> None:
+        """Initialize with the activity derived from the progress frames."""
+        super().__init__(activity.kind)
+        self.activity = activity
 
 
 class JuraWifiAuthError(JuraWifiError):
@@ -150,6 +190,31 @@ def discover_machine(
         ef_code=entry.ef_code if entry is not None and known else None,
         model_name=entry.friendly_name if entry is not None and known else None,
     )
+
+
+def describe_activity(
+    frames: Iterable[str], profile: MachineProfile
+) -> MachineActivity | None:
+    """Say what the machine is doing from the frames it pushed on its own.
+
+    Only a session in which progress frames (``@TV:``) arrived but no status
+    frame (``@TF:``) counts as activity. Returns ``None`` otherwise.
+    """
+    pushed = [frame for frame in frames if frame.startswith(("@TF:", "@TV:"))]
+    if not pushed or any(frame.startswith("@TF:") for frame in pushed):
+        return None
+    for frame in reversed(pushed):
+        if not is_progress_frame(frame):
+            continue
+        progress = ProductProgress.parse(frame, profile)
+        kind = _ACTIVITY_BY_PROGRESS_TYPE.get(progress.progress_type, ACTIVITY_BUSY)
+        if kind == ACTIVITY_PROGRAMMING:
+            return MachineActivity(kind)
+        if kind == ACTIVITY_BUSY:
+            return MachineActivity(kind, progress.state_name.lower())
+        return MachineActivity(kind, progress.subject)
+    # Only language-download or clock-sync frames: alive, but nothing to name.
+    return MachineActivity(ACTIVITY_BUSY)
 
 
 class _SessionGate:
@@ -295,7 +360,11 @@ class JuraWifiClient:
             client.conn.close()
 
     def fetch(self) -> MachineSnapshot:
-        """Read status, maintenance data and brew counters in one session."""
+        """Read status, maintenance data and brew counters in one session.
+
+        Raises :class:`JuraWifiBusy` when the machine answers but pushes progress
+        frames instead of a status frame.
+        """
         with self._gate.session():
             client = self._open()
             try:
@@ -304,6 +373,11 @@ class JuraWifiClient:
                     products = client.read_product_counters()
                 except ValueError:
                     products = None
+            except TimeoutError as err:
+                activity = describe_activity(client.status_history, self.profile)
+                if activity is not None:
+                    raise JuraWifiBusy(activity) from err
+                raise JuraWifiConnectionError(str(err) or type(err).__name__) from err
             except OSError as err:
                 raise JuraWifiConnectionError(str(err) or type(err).__name__) from err
             except Exception as err:

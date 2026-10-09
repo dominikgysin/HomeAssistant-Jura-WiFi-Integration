@@ -27,6 +27,9 @@ async def async_get_config_entry_diagnostics(
             "options": dict(entry.options),
         },
         "online": data.online,
+        "activity": (
+            dataclasses.asdict(data.activity) if data.activity is not None else None
+        ),
         "snapshot": (
             {
                 key: sorted(value) if isinstance(value, frozenset) else value

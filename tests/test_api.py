@@ -7,7 +7,7 @@ import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from jura_connect import Machine, PairingTimeout, list_profile_codes
+from jura_connect import Machine, PairingTimeout, list_profile_codes, load_profile
 from jura_connect.client import (
     HandshakeResult,
     MachineInfo,
@@ -22,13 +22,19 @@ import pytest
 from custom_components.jura_wifi import api
 from custom_components.jura_wifi.api import (
     JuraWifiAuthError,
+    JuraWifiBusy,
     JuraWifiClient,
     JuraWifiConnectionError,
     JuraWifiError,
     JuraWifiPairingTimeout,
+    MachineActivity,
     MachineIdentity,
+    describe_activity,
     discover_machine,
 )
+
+# A progress frame captured from a real E8 whose display sat in its menu.
+P_MODE_FRAME = "@TV:FF510000149305B9057F05AC058E"
 
 MACHINE_INFO = MachineInfo(
     conn_id="homeassistant-12345678",
@@ -131,6 +137,65 @@ def test_connection_lost_while_reading(fake: MagicMock) -> None:
     with pytest.raises(JuraWifiConnectionError):
         _client().fetch()
     fake.close.assert_called_once()
+
+
+def test_progress_frames_instead_of_a_status_frame_mean_busy(fake: MagicMock) -> None:
+    """A machine in its menu answers, it just cannot report its status."""
+    fake.read_machine_info.side_effect = TimeoutError("no pushed @TF: status frame")
+    fake.status_history = ["@TB", P_MODE_FRAME, P_MODE_FRAME]
+    with pytest.raises(JuraWifiBusy) as err:
+        _client().fetch()
+    assert err.value.activity == MachineActivity("programming")
+    assert not isinstance(err.value, JuraWifiConnectionError)
+    fake.read_product_counters.assert_not_called()
+    fake.close.assert_called_once()
+
+
+def test_silence_is_not_activity(fake: MagicMock) -> None:
+    """Without any pushed frame the machine counts as unreachable."""
+    fake.read_machine_info.side_effect = TimeoutError("no pushed @TF: status frame")
+    fake.status_history = []
+    with pytest.raises(JuraWifiConnectionError):
+        _client().fetch()
+
+
+def test_a_timeout_after_the_status_frame_is_not_activity(fake: MagicMock) -> None:
+    """Progress frames next to a status frame do not make the machine busy."""
+    fake.read_machine_info.side_effect = TimeoutError("no reply to '@TG:43'")
+    fake.status_history = ["@TV:3C0200", "@TF:0123"]
+    with pytest.raises(JuraWifiConnectionError):
+        _client().fetch()
+
+
+def test_a_dropped_connection_is_not_activity(fake: MagicMock) -> None:
+    """Only a missing status frame counts, not a connection that went away."""
+    fake.read_machine_info.side_effect = ConnectionResetError("reset by peer")
+    fake.status_history = [P_MODE_FRAME]
+    with pytest.raises(JuraWifiConnectionError):
+        _client().fetch()
+
+
+@pytest.mark.parametrize(
+    ("frames", "expected"),
+    [
+        ([P_MODE_FRAME], MachineActivity("programming")),
+        (["@TV:3C0200"], MachineActivity("brewing", "espresso")),
+        (["@TV:3E28"], MachineActivity("brewing", "americano")),
+        (["@TV:7424"], MachineActivity("maintenance", "cleaning")),
+        (["@TV:E1"], MachineActivity("busy", "warning")),
+        (["@TV:84,0102"], MachineActivity("busy")),
+        # The latest progress frame decides; language-download frames are skipped.
+        ([P_MODE_FRAME, "@TV:3C0200"], MachineActivity("brewing", "espresso")),
+        (["@TV:3C0200", "@TV:84,0102"], MachineActivity("brewing", "espresso")),
+        # A status frame means that the machine reports as usual.
+        (["@TV:3C0200", "@TF:0123"], None),
+        (["@TB", "@TS"], None),
+        ([], None),
+    ],
+)
+def test_describe_activity(frames: list[str], expected: MachineActivity | None) -> None:
+    """The progress frames name what the machine is doing."""
+    assert describe_activity(frames, load_profile("EF1120")) == expected
 
 
 def test_unexpected_reply(fake: MagicMock) -> None:

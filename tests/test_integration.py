@@ -15,8 +15,10 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.jura_wifi.api import (
     JuraWifiAuthError,
+    JuraWifiBusy,
     JuraWifiConnectionError,
     JuraWifiError,
+    MachineActivity,
 )
 from custom_components.jura_wifi.const import (
     CONF_ARTICLE_NUMBER,
@@ -482,6 +484,85 @@ async def test_brew_while_offline(
     mock_client.brew.assert_not_called()
 
 
+async def test_busy_machine_at_startup(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """A machine in its menu is online; its values are just not known yet."""
+    mock_client.fetch.side_effect = JuraWifiBusy(MachineActivity("programming"))
+    await setup_entry(hass, mock_config_entry)
+
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    status = _state(hass, "sensor", mock_config_entry, "status")
+    assert status.state == "programming"
+    assert status.attributes["activity"] == "programming"
+    assert "activity_detail" not in status.attributes
+    assert (
+        _state(hass, "binary_sensor", mock_config_entry, "connectivity").state
+        == STATE_ON
+    )
+    assert (
+        _state(hass, "binary_sensor", mock_config_entry, "water_tank_empty").state
+        == STATE_UNAVAILABLE
+    )
+    assert (
+        _state(hass, "sensor", mock_config_entry, "total_brews").state == STATE_UNKNOWN
+    )
+    assert _state(hass, "sensor", mock_config_entry, "model").state == "E8 (SDS)"
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, mock_config_entry)
+    assert diagnostics["activity"] == {"kind": "programming", "detail": None}
+    assert diagnostics["snapshot"] is None
+
+
+async def test_busy_machine_keeps_the_last_values(
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    mock_config_entry: MockConfigEntry,
+    freezer,
+) -> None:
+    """While the machine brews, the values of the last full poll stay."""
+    await setup_entry(hass, mock_config_entry)
+    mock_client.fetch.side_effect = JuraWifiBusy(MachineActivity("brewing", "espresso"))
+
+    # A busy machine is reachable, however long it stays busy.
+    for _ in range(3):
+        await _poll(hass, freezer)
+
+    status = _state(hass, "sensor", mock_config_entry, "status")
+    assert status.state == "brewing"
+    assert status.attributes["activity"] == "brewing"
+    assert status.attributes["activity_detail"] == "espresso"
+    assert "active_alerts" not in status.attributes
+    assert (
+        _state(hass, "binary_sensor", mock_config_entry, "connectivity").state
+        == STATE_ON
+    )
+    assert _state(hass, "sensor", mock_config_entry, "total_brews").state == "20"
+    assert (
+        _state(hass, "binary_sensor", mock_config_entry, "water_tank_empty").state
+        == STATE_OFF
+    )
+
+    mock_client.fetch.side_effect = None
+    await _poll(hass, freezer)
+    status = _state(hass, "sensor", mock_config_entry, "status")
+    assert status.state == "ready"
+    assert "activity" not in status.attributes
+    assert status.attributes["active_alerts"] == ["coffee_ready"]
+
+
+async def test_brew_while_the_machine_is_busy(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """A machine that is brewing, in its menu or in a program is not started."""
+    mock_client.fetch.side_effect = JuraWifiBusy(MachineActivity("maintenance"))
+    await _enable_brewing(hass, mock_config_entry)
+
+    with pytest.raises(ServiceValidationError):
+        await mock_config_entry.runtime_data.async_brew("espresso", "Espresso")
+    mock_client.brew.assert_not_called()
+
+
 async def test_diagnostics_redacts_credentials(
     hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
 ) -> None:
@@ -492,5 +573,6 @@ async def test_diagnostics_redacts_credentials(
     assert AUTH_HASH not in str(diagnostics)
     assert HOST not in str(diagnostics)
     assert diagnostics["online"] is True
+    assert diagnostics["activity"] is None
     assert diagnostics["snapshot"]["total_brews"] == 20
     assert diagnostics["snapshot"]["active_alerts"] == ["coffee_ready"]

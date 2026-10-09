@@ -225,10 +225,18 @@ class JuraWifiStatusSensor(JuraWifiSensor):
     """The machine status, with the raw alerts as attributes."""
 
     @property
-    def extra_state_attributes(self) -> dict[str, list[str]] | None:
-        """Return the active alerts reported by the machine."""
-        snapshot = self.snapshot
-        if not self.online or snapshot is None:
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return what the machine is doing, or else its active alerts."""
+        data = self.coordinator.data
+        if not data.online:
+            return None
+        if data.activity is not None:
+            attributes: dict[str, Any] = {"activity": data.activity.kind}
+            if data.activity.detail:
+                attributes["activity_detail"] = data.activity.detail
+            return attributes
+        snapshot = data.snapshot
+        if snapshot is None:
             return None
         return {
             "active_alerts": sorted(snapshot.active_alerts),
