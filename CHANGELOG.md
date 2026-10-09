@@ -7,6 +7,12 @@ version may change behaviour.
 
 ## [Unreleased]
 
+### Fixed
+
+- The README shows its logo in HACS: the image has an absolute address now and
+  the `<picture>` element, which HACS displays as text, is gone. The link to the
+  changelog works in HACS as well.
+
 ## [0.3.0] - 2026-10-09
 
 ### Added

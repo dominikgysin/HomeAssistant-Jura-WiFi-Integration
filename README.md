@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="custom_components/jura_wifi/brand/dark_logo@2x.png">
-    <img src="custom_components/jura_wifi/brand/logo@2x.png" alt="JURA Wi-Fi Connect for Home Assistant" height="96">
-  </picture>
+  <img src="https://raw.githubusercontent.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/main/custom_components/jura_wifi/brand/icon@2x.png" alt="JURA Wi-Fi Connect logo" width="128">
 </p>
 
 # JURA Wi-Fi Connect for Home Assistant
@@ -190,12 +187,14 @@ container). The tests include end-to-end runs against the dongle simulator of
 the `jura-connect` library: real protocol over TCP on the loopback address.
 
 The brand images in `custom_components/jura_wifi/brand` are drawn by
-`scripts/make_brand_images.py` (needs Pillow).
+`scripts/make_brand_images.py` (needs Pillow). The README points to the icon by
+its absolute address and avoids `<picture>`, because HACS shows relative images
+broken and `<picture>` as text.
 
 ## Releases
 
 The versions follow [Semantic Versioning](https://semver.org/) and every change
-is listed in the [changelog](CHANGELOG.md). HACS offers the latest
+is listed in the [changelog](https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/blob/main/CHANGELOG.md). HACS offers the latest
 [GitHub release](https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/releases),
 so a change reaches the users when it is released, not when it is pushed.
 
