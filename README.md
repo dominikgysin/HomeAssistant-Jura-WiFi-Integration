@@ -1,0 +1,1 @@
+# HomeAssistant-Jura-WiFi-Integration
