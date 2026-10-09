@@ -179,6 +179,12 @@ while the machine is busy, which is when it is needed.
   browser keeps brand images for up to a day: if the placeholder is still there
   after an update, reload the page once or twice (the image is refreshed in the
   background) or clear the site data of Home Assistant in the browser.
+- **HACS itself shows the grey placeholder** instead of the logo, in its list and
+  in the update entry (Settings → Updates). HACS 2.0.5 and older still ask the old
+  brands server for the icon, which no longer takes custom integrations since Home
+  Assistant 2026.3 ([hacs/integration#5171](https://github.com/hacs/integration/issues/5171)).
+  The logo is shipped correctly: the pages of Home Assistant (integration, device)
+  show it.
 - Debug logging: `logger: logs: custom_components.jura_wifi: debug` and
   `jura_connect: debug`. Diagnostics downloads redact the address and
   credentials.
