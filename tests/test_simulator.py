@@ -216,15 +216,41 @@ def test_a_program_the_machine_refuses_is_reported(
 
 
 def test_a_program_the_machine_does_not_have(machine: Callable[..., Simulator]) -> None:
-    """The E8 has no coffee system rinse; nothing is sent."""
+    """A machine without a milk system has no milk system cleaning; nothing is sent."""
+    simulator = machine(allow_process=True)
+    host, port = _address(simulator)
+    auth_hash = _client(simulator).pair()
+    client = JuraWifiClient(host, port, CONN_ID, auth_hash, "", "EF1089")
+    _commands(simulator)
+
+    with pytest.raises(JuraWifiError, match="does not declare"):
+        client.start_process("cappu_clean")
+
+    assert not [c for c in _commands(simulator) if c.startswith("@TG:2")]
+
+
+def test_the_coffee_system_rinse_of_the_e8(machine: Callable[..., Simulator]) -> None:
+    """The profile of the E8 does not list the rinse, yet the verb is sent."""
     simulator = machine(allow_process=True)
     client = _paired(simulator)
     _commands(simulator)
 
-    with pytest.raises(JuraWifiError, match="does not declare"):
+    client.start_process("coffee_rinse")
+
+    assert _commands(simulator) == ["@TG:22"]
+
+
+def test_a_machine_that_ignores_the_coffee_system_rinse_is_reported(
+    machine: Callable[..., Simulator],
+) -> None:
+    """A machine that does not know the verb stays silent: a failed command only."""
+    simulator = machine()
+    client = _paired(simulator)
+
+    with pytest.raises(JuraWifiError, match="did not answer") as err:
         client.start_process("coffee_rinse")
 
-    assert not [c for c in _commands(simulator) if c.startswith("@TG:2")]
+    assert not isinstance(err.value, api.JuraWifiConnectionError)
 
 
 def test_cancelling(machine: Callable[..., Simulator]) -> None:
@@ -322,7 +348,7 @@ async def test_the_integration_controls_the_simulated_machine(
     assert state.state == "3229"
     _commands(simulator)
 
-    for key in ("brew_cappuccino", "start_cappu_rinse", "cancel"):
+    for key in ("brew_cappuccino", "start_cappu_rinse", "start_coffee_rinse", "cancel"):
         button = registry.async_get_entity_id(
             "button", DOMAIN, f"{entry.entry_id}_{key}"
         )
@@ -335,11 +361,13 @@ async def test_the_integration_controls_the_simulated_machine(
     received = _commands(simulator)
     assert PERSONAL_CAPPUCCINO in received
     assert "@TG:23" in received
+    assert "@TG:22" in received
     assert "@TG:FF" in received
-    # In this order: the drink, then the program, then the cancel.
+    # In this order: the drink, then the programs, then the cancel.
     assert (
         received.index(PERSONAL_CAPPUCCINO)
         < received.index("@TG:23")
+        < received.index("@TG:22")
         < received.index("@TG:FF")
     )
 

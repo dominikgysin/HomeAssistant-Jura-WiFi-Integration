@@ -22,7 +22,7 @@ with JURA. The logo is an original drawing and not related to any JURA logo.
 | --- | --- |
 | JURA E8 (SDS) with Wi-Fi Connect V2 | pairing, status, counters, maintenance values and the stored drink recipes verified on a real machine (read-only), also while the machine is in energy-saving mode |
 | Home Assistant side (config flow, entities, offline handling) | automated tests pass on Home Assistant 2025.10 and 2026.10; the integration was also loaded in a Home Assistant test instance against the real E8 (read-only) |
-| Brewing, maintenance programs, cancel | the commands are tested end to end against the dongle simulator of the library (real protocol over TCP), **not yet run on a real machine through this integration** |
+| Brewing, maintenance programs, cancel | the commands are tested end to end against the dongle simulator of the library (real protocol over TCP). The **coffee system rinse** was also run on a real E8 (SDS) with the client code of this integration: the machine acknowledges the command, rinses for about a minute and counts the rinse. The other commands are **not yet run on a real machine through this integration** |
 | Busy machine (menu, brewing, maintenance program) | the machine then pushes progress frames instead of status frames; covered by tests using one frame captured from a real E8 in its menu |
 | Model detection | article number announced by UDP broadcast (same network as the dongle only), article number or model list as fallback; the UDP part is **not yet verified against a real machine** |
 | Other models | profiles for ~330 variants are bundled, untested |
@@ -84,7 +84,7 @@ Home Assistant configuration and restart Home Assistant.
 | Cleaning need, descaling need, filter wear | percent of the interval used (filter wear is disabled by default) |
 | Maintenance cycle counters | diagnostic, disabled by default |
 | Brew buttons | one per drink, only if enabled in the options, see [Controls](#controls) |
-| Maintenance buttons | one per maintenance program of the machine, only if enabled in the options; in the configuration section of the device |
+| Maintenance buttons | one per maintenance program of the machine and one for the coffee system rinse, only if enabled in the options; in the configuration section of the device |
 | Cancel button | only together with one of the two sets above |
 
 Entities are created from the machine profile, so only what your model supports
@@ -129,6 +129,15 @@ anything on its own.
 Cleaning and descaling take a long time and need the tablet or the descaler to
 be at hand, and a program should be run to its end. They only make sense when
 you are at the machine. The status sensor shows `maintenance` while one runs.
+
+The **coffee system rinse** (*Rinse coffee system*) is the simple one: it needs
+no tablet and no confirmation. It starts at once and runs for about a minute with
+water coming out of the coffee spout, so put a cup or the drip tray under it
+first. The machine counts it in *Coffee system rinses performed*. The machine
+profile of the E8 does not list this program (only the GIGA 6 profiles do), but a
+real E8 (SDS) runs it when it gets the command of the J.O.E. app; the button is
+therefore offered for every machine. A machine that does not know the command
+reports a failed start.
 
 ### Cancel
 

@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .api import UNDECLARED_PROGRAMS
 from .const import CONF_ENABLE_BREWING, CONF_ENABLE_MAINTENANCE
 from .coordinator import JuraWifiConfigEntry, JuraWifiCoordinator
 from .entity import JuraWifiEntity
@@ -19,7 +20,8 @@ from .sensor import product_label
 BREWABLE_KINDS = frozenset({"C", "CM", "M", "T"})
 
 # The maintenance programs the integration can start, with the name used in
-# messages. Only those that the profile of the machine declares are offered.
+# messages. The profile of the machine decides which are offered, except for the
+# programs that are started even if it does not list them.
 MAINTENANCE_PROGRAMS = {
     "cleaning": "Cleaning",
     "descale": "Descaling",
@@ -50,11 +52,13 @@ async def async_setup_entry(
             if product.active and product.kind in BREWABLE_KINDS
         )
     if maintenance:
-        declared = {process.name for process in coordinator.profile.processes}
+        offered = {
+            process.name for process in coordinator.profile.processes
+        } | UNDECLARED_PROGRAMS
         entities.extend(
             JuraWifiMaintenanceButton(coordinator, process)
             for process in MAINTENANCE_PROGRAMS
-            if process in declared
+            if process in offered
         )
     if brewing or maintenance:
         entities.append(JuraWifiCancelButton(coordinator))

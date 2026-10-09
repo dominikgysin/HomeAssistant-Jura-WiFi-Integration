@@ -425,10 +425,49 @@ def test_start_process_failures(
 
 
 def test_start_process_the_machine_does_not_declare(fake: MagicMock) -> None:
-    """The library refuses a program the profile does not know."""
-    fake.process_runner.side_effect = ProcessError("does not declare 'coffee_rinse'")
+    """The library refuses a program the profile does not know; nothing is sent."""
+    fake.process_runner.side_effect = ProcessError("does not declare 'cappu_clean'")
     with pytest.raises(JuraWifiError, match="does not declare"):
+        _client().start_process("cappu_clean")
+    fake.request.assert_not_called()
+    fake.close.assert_called_once()
+
+
+def test_the_coffee_system_rinse_is_started_without_a_declaration(
+    fake: MagicMock,
+) -> None:
+    """The E8 leaves the rinse out of its profile but runs it: its verb is sent."""
+    fake.process_runner.side_effect = ProcessError("does not declare 'coffee_rinse'")
+    fake.request.return_value = "@tg:22"
+
+    _client().start_process("coffee_rinse")
+
+    assert fake.request.call_args.args == ("@TG:22",)
+    fake.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("failure", "reply", "expected"),
+    [
+        (None, "@an:error", JuraWifiError),
+        (TimeoutError("no reply"), "", JuraWifiError),
+        (ConnectionResetError("reset"), "", JuraWifiConnectionError),
+    ],
+)
+def test_the_coffee_system_rinse_failures(
+    fake: MagicMock, failure: Exception | None, reply: str, expected: type[Exception]
+) -> None:
+    """A machine that does not run the rinse says so; a lost session is an outage."""
+    fake.process_runner.side_effect = ProcessError("does not declare 'coffee_rinse'")
+    fake.request.return_value = reply
+    fake.request.side_effect = failure
+
+    with pytest.raises(expected) as err:
         _client().start_process("coffee_rinse")
+
+    if expected is JuraWifiError:
+        assert not isinstance(err.value, JuraWifiConnectionError)
+    fake.close.assert_called_once()
 
 
 def test_cancel_step(fake: MagicMock) -> None:

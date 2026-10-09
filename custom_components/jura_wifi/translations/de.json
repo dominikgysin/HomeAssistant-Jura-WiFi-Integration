@@ -85,7 +85,7 @@
         "data_description": {
           "scan_interval": "Sekunden zwischen zwei Abfragen. Der Stick akzeptiert nur eine Verbindung gleichzeitig, daher nicht zu niedrig wählen.",
           "enable_brewing": "Fügt pro Getränk eine Schaltfläche hinzu, die es mit dem auf der Maschine gespeicherten Rezept zubereitet, so wie am Display eingestellt. Vor dem Drücken eine Tasse unterstellen. Fügt auch eine Abbrechen-Schaltfläche hinzu.",
-          "enable_maintenance": "Fügt Schaltflächen hinzu, die die Pflegeprogramme der Maschine starten (Reinigung, Entkalkung, Milchsystem spülen, ...). Die Bestätigungen fragt die Maschine danach auf ihrem Display ab. Fügt auch eine Abbrechen-Schaltfläche hinzu."
+          "enable_maintenance": "Fügt Schaltflächen hinzu, die die Pflegeprogramme der Maschine starten (Reinigung, Entkalkung, Milchsystem spülen, Kaffeesystem spülen, ...). Die Bestätigungen fragt die Maschine danach auf ihrem Display ab; das Kaffeesystem wird sofort gespült, also eine Tasse unter den Auslauf stellen. Fügt auch eine Abbrechen-Schaltfläche hinzu."
         }
       }
     }

@@ -7,6 +7,7 @@ import dataclasses
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock
 
+from jura_connect import load_profile
 import pytest
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -454,23 +455,41 @@ async def test_maintenance_buttons(
     """The programs of the profile get a button, each in the config section."""
     await _enable_controls(hass, mock_config_entry, maintenance=True)
 
-    # The E8 declares these five; it has no coffee system rinse program.
+    # The E8 declares five programs; the coffee system rinse is not among them,
+    # but the machine runs it, so it gets its button as well.
     assert _button_keys(hass, mock_config_entry) == {
         "start_cleaning",
         "start_descale",
         "start_filter_change",
         "start_cappu_rinse",
         "start_cappu_clean",
+        "start_coffee_rinse",
         "cancel",
     }
     registry = er.async_get(hass)
-    for key in ("start_cleaning", "start_cappu_rinse"):
+    for key in ("start_cleaning", "start_cappu_rinse", "start_coffee_rinse"):
         entry = registry.async_get(_entity_id(hass, "button", mock_config_entry, key))
         assert entry is not None
         assert entry.entity_category is er.EntityCategory.CONFIG
     cancel = registry.async_get(_entity_id(hass, "button", mock_config_entry, "cancel"))
     assert cancel is not None
     assert cancel.entity_category is None
+
+
+async def test_a_machine_without_a_milk_system_gets_no_milk_buttons(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """Only the programs of the profile, plus the rinse of the coffee system."""
+    mock_client.profile = load_profile("EF1089")
+    await _enable_controls(hass, mock_config_entry, maintenance=True)
+
+    assert _button_keys(hass, mock_config_entry) == {
+        "start_cleaning",
+        "start_descale",
+        "start_filter_change",
+        "start_coffee_rinse",
+        "cancel",
+    }
 
 
 async def test_brew_and_maintenance_buttons_share_one_cancel_button(
@@ -501,6 +520,24 @@ async def test_start_a_maintenance_program(
     status = _state(hass, "sensor", mock_config_entry, "status")
     assert status.state == "maintenance"
     assert status.attributes["activity_detail"] == "cappu_rinse"
+
+
+async def test_start_the_coffee_system_rinse(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """The rinse starts right away and shows as a maintenance program."""
+    await _enable_controls(hass, mock_config_entry, maintenance=True)
+    mock_client.fetch.side_effect = JuraWifiBusy(
+        MachineActivity("maintenance", "coffee_rinse")
+    )
+
+    await _press(hass, mock_config_entry, "start_coffee_rinse")
+    await hass.async_block_till_done()
+
+    mock_client.start_process.assert_called_once_with("coffee_rinse")
+    status = _state(hass, "sensor", mock_config_entry, "status")
+    assert status.state == "maintenance"
+    assert status.attributes["activity_detail"] == "coffee_rinse"
 
 
 async def test_no_second_program_while_the_machine_is_busy(

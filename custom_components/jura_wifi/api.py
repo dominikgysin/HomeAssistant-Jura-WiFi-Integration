@@ -28,11 +28,14 @@ from jura_connect import (
     JuraClient,
     MachineProfile,
     PairingTimeout,
+    ProcessError,
+    ProcessRunner,
     ProductDef,
     ProductParam,
     ProductProgress,
     ProgressState,
     ProgressType,
+    available_processes,
     discover,
     is_progress_frame,
     list_profile_codes,
@@ -56,6 +59,11 @@ PERCENT_NOT_REPORTED = 0xFF
 
 # Millilitre parameters travel as one byte of 5 ml ticks.
 ML_PER_TICK = 5
+
+# Maintenance programs that are started even if the profile of the machine does not
+# list them. Only the GIGA 6 profiles declare the coffee system rinse, yet a real
+# E8 (SDS) runs it as well when it gets the same verb (@TG:22).
+UNDECLARED_PROGRAMS = frozenset({"coffee_rinse"})
 
 # The recipe parameters of a drink and the keyword with which ``JuraClient.brew``
 # takes each of them. The grinder parameters are left to the defaults of the
@@ -533,17 +541,34 @@ class JuraWifiClient:
         if not accepted.startswith("@tp") or accepted.startswith("@tp:00"):
             raise JuraWifiError(f"machine rejected the request ({reply!r})")
 
+    @staticmethod
+    def _process_runner(client: JuraClient, process: str) -> ProcessRunner:
+        """Bind a maintenance program to the session; nothing is sent yet.
+
+        The library refuses a program that the profile of the machine does not
+        declare, because sending it would be a guess. The programs in
+        ``UNDECLARED_PROGRAMS`` are sent anyway, with the verb of the built-in table.
+        """
+        try:
+            return client.process_runner(process)
+        except ProcessError:
+            if process not in UNDECLARED_PROGRAMS:
+                raise
+        fallback = next(p for p in available_processes(None) if p.name == process)
+        return ProcessRunner(client, fallback)
+
     def start_process(self, process: str) -> None:
         """Start a maintenance program (cleaning, descaling, milk system rinse, ...).
 
         Only the start is sent. The machine then leads the user through the program
         on its display and waits there for the confirmations, e.g. for emptying the
-        drip tray or inserting a tablet.
+        drip tray or inserting a tablet. The coffee system rinse needs none: it runs
+        right away.
         """
         with self._gate.session():
             client = self._open()
             try:
-                client.process_runner(process).start(timeout=READ_TIMEOUT)
+                self._process_runner(client, process).start(timeout=READ_TIMEOUT)
             except TimeoutError as err:
                 raise JuraWifiError(
                     "the machine did not answer the start request"

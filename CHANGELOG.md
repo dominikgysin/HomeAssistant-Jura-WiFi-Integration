@@ -7,6 +7,20 @@ version may change behaviour.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-09
+
+### Added
+
+- Button **Rinse coffee system** (option **Maintenance buttons**). The machine
+  profile of the E8 does not list this program, only the GIGA 6 profiles do, but a
+  real E8 (SDS) starts it with the command of the J.O.E. app (`@TG:22`): it
+  acknowledges the command, rinses for about a minute while it reports its
+  progress, and counts the rinse. The rinse asks for no confirmation and starts at
+  once, so put a cup under the spout first. The status shows `maintenance` with
+  the detail `coffee_rinse` meanwhile. The button is offered for every machine that
+  has the maintenance buttons; a machine that does not know the command reports a
+  failed start.
+
 ### Fixed
 
 - The README shows its logo in HACS: the image has an absolute address now and
@@ -82,7 +96,8 @@ version may change behaviour.
   status, problem and maintenance sensors and brew counters; opt-in brew buttons
   with the factory recipes; diagnostics; English and German translations.
 
-[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.1.0...v0.2.0
