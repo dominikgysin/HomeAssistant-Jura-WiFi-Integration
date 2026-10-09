@@ -38,6 +38,60 @@ IDENTITY = MachineIdentity(
     model_name="E8 (SDS)",
 )
 
+# A progress frame captured from a real E8 whose display sat in its menu.
+P_MODE_FRAME = "@TV:FF510000149305B9057F05AC058E"
+
+# Recipes as stored on a real E8 (SDS), read with @TM:41, and what they mean for
+# the brew command. Several drinks were adjusted at the display: for example the
+# factory recipe of the cappuccino has 14 s of foam, the latte macchiato 22 s with a
+# 30 s pause, the americano 70 ml of coffee plus 50 ml of water. The profile marks
+# the cortado and the americano as not programmable, yet the machine answers for
+# them. The last byte is not a parameter: it differs from read to read.
+E8_STORED_RECIPES = {
+    "espresso": "0200080900000200000000000066",
+    "coffee": "0300051400000100000000000077",
+    "cortado": "2B00080500040200000000000000",
+    "americano": "2800060C00000100000800000000",
+    "lungo": "2900071800000100001400000000",
+    "cappuccino": "0400080C00140100000000000000",
+    "latte_macchiato": "0700080900210200000014000000",
+    "espresso_macchiato": "06000805000402000000000000DD",
+    "flat_white": "2E00050C001201000000000000DD",
+    "espresso_doppio": "30000812000002000000000000AA",
+    "milk_foam": "08000100000F00000000000000AA",
+    "hotwater_portion_normal": "0D00012C000001000000000000AA",
+}
+E8_RECIPE_ARGUMENTS = {
+    "espresso": {"strength": 8, "ml": 45, "temperature": 2},
+    "coffee": {"strength": 5, "ml": 100, "temperature": 1},
+    "cortado": {"strength": 8, "ml": 25, "temperature": 2, "milk_foam": 4},
+    "americano": {"strength": 6, "ml": 60, "temperature": 1, "bypass": 40},
+    "lungo": {"strength": 7, "ml": 120, "temperature": 1, "bypass": 100},
+    "cappuccino": {"strength": 8, "ml": 60, "temperature": 1, "milk_foam": 20},
+    "latte_macchiato": {
+        "strength": 8,
+        "ml": 45,
+        "temperature": 2,
+        "milk_foam": 33,
+        "milk_break": 20,
+    },
+    "espresso_macchiato": {"strength": 8, "ml": 25, "temperature": 2, "milk_foam": 4},
+    "flat_white": {"strength": 5, "ml": 60, "temperature": 1, "milk_foam": 18},
+    "espresso_doppio": {"strength": 8, "ml": 90, "temperature": 2},
+    "milk_foam": {"milk_foam": 15},
+    "hotwater_portion_normal": {"ml": 220, "temperature": 1},
+}
+# The drinks whose stored recipe is not the factory recipe.
+E8_ADJUSTED_DRINKS = {
+    "cortado",
+    "americano",
+    "cappuccino",
+    "latte_macchiato",
+    "espresso_macchiato",
+    "flat_white",
+    "milk_foam",
+}
+
 # Values read from a real E8 (SDS).
 SNAPSHOT = MachineSnapshot(
     active_alerts=frozenset({"coffee_ready"}),

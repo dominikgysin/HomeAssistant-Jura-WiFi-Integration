@@ -18,6 +18,7 @@ CONF_MODEL_NAME = "model_name"
 CONF_MODEL_SOURCE = "model_source"
 CONF_PIN = "pin"
 CONF_ENABLE_BREWING = "enable_brewing"
+CONF_ENABLE_MAINTENANCE = "enable_maintenance"
 CONF_SCAN_INTERVAL = "scan_interval"
 
 # How the model of an entry was determined.

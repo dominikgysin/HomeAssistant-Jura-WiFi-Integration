@@ -30,7 +30,14 @@
       "cycles_milk_clean": { "default": "mdi:counter" }
     },
     "button": {
-      "brew": { "default": "mdi:coffee" }
+      "brew": { "default": "mdi:coffee" },
+      "cancel": { "default": "mdi:stop-circle-outline" },
+      "start_cleaning": { "default": "mdi:spray-bottle" },
+      "start_descale": { "default": "mdi:flask-outline" },
+      "start_filter_change": { "default": "mdi:filter" },
+      "start_cappu_rinse": { "default": "mdi:water-sync" },
+      "start_cappu_clean": { "default": "mdi:spray-bottle" },
+      "start_coffee_rinse": { "default": "mdi:water-sync" }
     }
   }
 }

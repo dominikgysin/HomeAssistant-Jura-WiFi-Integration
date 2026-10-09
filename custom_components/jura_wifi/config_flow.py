@@ -38,7 +38,9 @@ from homeassistant.helpers.selector import (
 )
 
 from .api import (
+    ACTIVITY_PROGRAMMING,
     JuraWifiAuthError,
+    JuraWifiBusy,
     JuraWifiClient,
     JuraWifiConnectionError,
     JuraWifiError,
@@ -51,6 +53,7 @@ from .const import (
     CONF_AUTH_HASH,
     CONF_CONN_ID,
     CONF_ENABLE_BREWING,
+    CONF_ENABLE_MAINTENANCE,
     CONF_FIRMWARE,
     CONF_MACHINE_TYPE,
     CONF_MODEL,
@@ -196,6 +199,19 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
         except JuraWifiConnectionError as err:
             self._pair_error = "cannot_connect"
             self._pair_reason = str(err)
+        except JuraWifiBusy as err:
+            _LOGGER.warning(
+                "The machine at %s is busy and cannot pair: %s (%s)",
+                self._host,
+                err.activity.kind,
+                err.activity.detail,
+            )
+            self._pair_error = (
+                "machine_in_menu"
+                if err.activity.kind == ACTIVITY_PROGRAMMING
+                else "machine_busy"
+            )
+            self._pair_reason = err.activity.detail or err.activity.kind
         except JuraWifiError as err:
             _LOGGER.exception("Pairing with %s failed", self._host)
             self._pair_error = "unknown"
@@ -355,6 +371,7 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
             options={
                 CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
                 CONF_ENABLE_BREWING: False,
+                CONF_ENABLE_MAINTENANCE: False,
             },
         )
 
@@ -434,6 +451,7 @@ class JuraWifiOptionsFlow(OptionsFlowWithReload):
                 data={
                     CONF_SCAN_INTERVAL: int(user_input[CONF_SCAN_INTERVAL]),
                     CONF_ENABLE_BREWING: user_input[CONF_ENABLE_BREWING],
+                    CONF_ENABLE_MAINTENANCE: user_input[CONF_ENABLE_MAINTENANCE],
                 }
             )
         schema = vol.Schema(
@@ -450,6 +468,7 @@ class JuraWifiOptionsFlow(OptionsFlowWithReload):
                     )
                 ),
                 vol.Required(CONF_ENABLE_BREWING, default=False): BooleanSelector(),
+                vol.Required(CONF_ENABLE_MAINTENANCE, default=False): BooleanSelector(),
             }
         )
         return self.async_show_form(

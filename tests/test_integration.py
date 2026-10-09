@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 from datetime import timedelta
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pytest_homeassistant_custom_component.common import (
@@ -23,6 +23,7 @@ from custom_components.jura_wifi.api import (
 from custom_components.jura_wifi.const import (
     CONF_ARTICLE_NUMBER,
     CONF_ENABLE_BREWING,
+    CONF_ENABLE_MAINTENANCE,
     CONF_FIRMWARE,
     CONF_MODEL_SOURCE,
     DOMAIN,
@@ -56,6 +57,11 @@ def _state(hass: HomeAssistant, platform: str, entry: ConfigEntry, key: str) -> 
 async def _poll(hass: HomeAssistant, freezer) -> None:
     freezer.tick(timedelta(seconds=61))
     async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+
+async def _poll_now(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
 
 
@@ -318,25 +324,53 @@ async def test_unexpected_error_retries_setup(
 async def test_no_brew_buttons_by_default(
     hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
 ) -> None:
-    """Brewing is an opt-in."""
+    """Controlling the machine is an opt-in."""
     await setup_entry(hass, mock_config_entry)
-    registry = er.async_get(hass)
-    assert not [
-        entry
-        for entry in er.async_entries_for_config_entry(
-            registry, mock_config_entry.entry_id
+    assert not _button_keys(hass, mock_config_entry)
+
+
+def _button_keys(hass: HomeAssistant, entry: ConfigEntry) -> set[str]:
+    """Return the keys of the buttons that exist for the entry."""
+    return {
+        registered.unique_id.removeprefix(f"{entry.entry_id}_")
+        for registered in er.async_entries_for_config_entry(
+            er.async_get(hass), entry.entry_id
         )
-        if entry.domain == "button"
-    ]
+        if registered.domain == "button"
+    }
 
 
-async def _enable_brewing(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+async def _enable_controls(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    *,
+    brewing: bool = False,
+    maintenance: bool = False,
+) -> None:
     entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
-        entry, options={**entry.options, CONF_ENABLE_BREWING: True}
+        entry,
+        options={
+            **entry.options,
+            CONF_ENABLE_BREWING: brewing,
+            CONF_ENABLE_MAINTENANCE: maintenance,
+        },
     )
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+
+
+async def _enable_brewing(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    await _enable_controls(hass, entry, brewing=True)
+
+
+async def _press(hass: HomeAssistant, entry: ConfigEntry, key: str) -> None:
+    await hass.services.async_call(
+        "button",
+        "press",
+        {"entity_id": _entity_id(hass, "button", entry, key)},
+        blocking=True,
+    )
 
 
 async def test_brew_button(
@@ -345,13 +379,8 @@ async def test_brew_button(
     """Pressing a button brews the product."""
     await _enable_brewing(hass, mock_config_entry)
 
-    brewable = {
-        entry.unique_id.removeprefix(f"{mock_config_entry.entry_id}_brew_")
-        for entry in er.async_entries_for_config_entry(
-            er.async_get(hass), mock_config_entry.entry_id
-        )
-        if entry.domain == "button"
-    }
+    keys = _button_keys(hass, mock_config_entry)
+    brewable = {key.removeprefix("brew_") for key in keys if key.startswith("brew_")}
     assert {
         "espresso",
         "cappuccino",
@@ -360,14 +389,262 @@ async def test_brew_button(
     } <= brewable
     assert "powderproduct" not in brewable
     assert "2x_espresso" not in brewable
+    # brewing alone does not bring the maintenance programs
+    assert not {key for key in keys if key.startswith("start_")}
 
-    await hass.services.async_call(
-        "button",
-        "press",
-        {"entity_id": _entity_id(hass, "button", mock_config_entry, "brew_espresso")},
-        blocking=True,
-    )
+    await _press(hass, mock_config_entry, "brew_espresso")
     mock_client.brew.assert_called_once_with("espresso")
+
+
+async def test_brewing_shows_up_in_the_status_right_away(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """The status does not wait for the next poll to say what was started."""
+    await _enable_brewing(hass, mock_config_entry)
+    coordinator = mock_config_entry.runtime_data
+    # Hold back the check that follows, to see what the press itself shows.
+    coordinator.async_request_refresh = AsyncMock()
+
+    await _press(hass, mock_config_entry, "brew_cappuccino")
+
+    status = _state(hass, "sensor", mock_config_entry, "status")
+    assert status.state == "brewing"
+    assert status.attributes["activity_detail"] == "cappuccino"
+    # The values of the last poll stay.
+    assert _state(hass, "sensor", mock_config_entry, "total_brews").state == "20"
+    # A second press while the first drink runs is refused.
+    with pytest.raises(ServiceValidationError):
+        await _press(hass, mock_config_entry, "brew_espresso")
+    mock_client.brew.assert_called_once_with("cappuccino")
+
+
+async def test_the_machine_is_checked_after_a_command(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """A poll follows the press, so the status does not stay on the guess."""
+    await _enable_brewing(hass, mock_config_entry)
+    polls = mock_client.fetch.call_count
+
+    await _press(hass, mock_config_entry, "brew_espresso")
+    await hass.async_block_till_done()
+
+    assert mock_client.fetch.call_count == polls + 1
+    # the mock machine reports normally again
+    assert _state(hass, "sensor", mock_config_entry, "status").state == "ready"
+
+
+async def test_the_status_follows_the_machine_after_a_command(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """While the drink runs the machine reports what it does, and that is shown."""
+    await _enable_brewing(hass, mock_config_entry)
+    mock_client.fetch.side_effect = JuraWifiBusy(MachineActivity("brewing", "espresso"))
+
+    await _press(hass, mock_config_entry, "brew_espresso")
+    await hass.async_block_till_done()
+
+    status = _state(hass, "sensor", mock_config_entry, "status")
+    assert status.state == "brewing"
+    assert status.attributes["activity_detail"] == "espresso"
+
+
+async def test_maintenance_buttons(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """The programs of the profile get a button, each in the config section."""
+    await _enable_controls(hass, mock_config_entry, maintenance=True)
+
+    # The E8 declares these five; it has no coffee system rinse program.
+    assert _button_keys(hass, mock_config_entry) == {
+        "start_cleaning",
+        "start_descale",
+        "start_filter_change",
+        "start_cappu_rinse",
+        "start_cappu_clean",
+        "cancel",
+    }
+    registry = er.async_get(hass)
+    for key in ("start_cleaning", "start_cappu_rinse"):
+        entry = registry.async_get(_entity_id(hass, "button", mock_config_entry, key))
+        assert entry is not None
+        assert entry.entity_category is er.EntityCategory.CONFIG
+    cancel = registry.async_get(_entity_id(hass, "button", mock_config_entry, "cancel"))
+    assert cancel is not None
+    assert cancel.entity_category is None
+
+
+async def test_brew_and_maintenance_buttons_share_one_cancel_button(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """Both options together give both sets and a single cancel button."""
+    await _enable_controls(hass, mock_config_entry, brewing=True, maintenance=True)
+
+    keys = _button_keys(hass, mock_config_entry)
+    assert "brew_espresso" in keys
+    assert "start_descale" in keys
+    assert [key for key in keys if "cancel" in key] == ["cancel"]
+
+
+async def test_start_a_maintenance_program(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """The press starts the program; the machine continues on its display."""
+    await _enable_controls(hass, mock_config_entry, maintenance=True)
+    mock_client.fetch.side_effect = JuraWifiBusy(
+        MachineActivity("maintenance", "cappu_rinse")
+    )
+
+    await _press(hass, mock_config_entry, "start_cappu_rinse")
+    await hass.async_block_till_done()
+
+    mock_client.start_process.assert_called_once_with("cappu_rinse")
+    status = _state(hass, "sensor", mock_config_entry, "status")
+    assert status.state == "maintenance"
+    assert status.attributes["activity_detail"] == "cappu_rinse"
+
+
+async def test_no_second_program_while_the_machine_is_busy(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """Whatever the machine does has to end before a program starts."""
+    mock_client.fetch.side_effect = JuraWifiBusy(MachineActivity("brewing", "coffee"))
+    await _enable_controls(hass, mock_config_entry, maintenance=True)
+
+    with pytest.raises(ServiceValidationError):
+        await mock_config_entry.runtime_data.async_start_process("cleaning", "Cleaning")
+    mock_client.start_process.assert_not_called()
+
+
+async def test_a_program_needs_a_reachable_machine(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """An offline machine cannot be told to start anything."""
+    mock_client.fetch.side_effect = JuraWifiConnectionError("down")
+    await _enable_controls(hass, mock_config_entry, maintenance=True)
+
+    with pytest.raises(HomeAssistantError):
+        await mock_config_entry.runtime_data.async_start_process("cleaning", "Cleaning")
+    mock_client.start_process.assert_not_called()
+    assert (
+        _state(hass, "button", mock_config_entry, "start_cleaning").state
+        == STATE_UNAVAILABLE
+    )
+
+
+async def test_a_refused_program_is_reported(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """The reason the machine gave is part of the error."""
+    mock_client.start_process.side_effect = JuraWifiError("machine refused to start")
+    await _enable_controls(hass, mock_config_entry, maintenance=True)
+
+    with pytest.raises(HomeAssistantError, match="machine refused to start"):
+        await _press(hass, mock_config_entry, "start_cleaning")
+    # a refusal is no sign of the machine being away
+    assert mock_config_entry.runtime_data.data.online
+    assert mock_config_entry.runtime_data.data.activity is None
+
+
+async def test_a_lost_connection_while_starting_counts_towards_offline(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """The same two-strike rule as for brewing."""
+    mock_client.start_process.side_effect = JuraWifiConnectionError("peer closed")
+    await _enable_controls(hass, mock_config_entry, maintenance=True)
+    coordinator = mock_config_entry.runtime_data
+
+    for _ in range(2):
+        with pytest.raises(HomeAssistantError, match="peer closed"):
+            await coordinator.async_start_process("descale", "Descaling")
+    await hass.async_block_till_done()
+    assert not coordinator.data.online
+
+
+async def test_rejected_credentials_while_starting_a_program_ask_for_pairing(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """The machine forgot the pairing: the entry asks to pair again."""
+    mock_client.start_process.side_effect = JuraWifiAuthError("WRONG_HASH")
+    await _enable_controls(hass, mock_config_entry, maintenance=True)
+
+    with pytest.raises(HomeAssistantError):
+        await _press(hass, mock_config_entry, "start_cleaning")
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [flow["context"]["source"] for flow in flows] == ["reauth"]
+
+
+async def test_cancel_button(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """The cancel button ends what the machine is doing, also while it is busy."""
+    await _enable_brewing(hass, mock_config_entry)
+    mock_client.fetch.side_effect = JuraWifiBusy(MachineActivity("brewing", "coffee"))
+    await _poll_now(hass, mock_config_entry)
+    assert _state(hass, "sensor", mock_config_entry, "status").state == "brewing"
+
+    await _press(hass, mock_config_entry, "cancel")
+
+    mock_client.cancel_step.assert_called_once_with()
+
+
+async def test_cancel_needs_a_reachable_machine(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """Nothing to cancel on a machine that is off."""
+    mock_client.fetch.side_effect = JuraWifiConnectionError("down")
+    await _enable_brewing(hass, mock_config_entry)
+
+    with pytest.raises(HomeAssistantError):
+        await mock_config_entry.runtime_data.async_cancel_step()
+    mock_client.cancel_step.assert_not_called()
+    assert (
+        _state(hass, "button", mock_config_entry, "cancel").state == STATE_UNAVAILABLE
+    )
+
+
+async def test_cancel_failure_is_reported(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """A refused cancel surfaces as an error."""
+    mock_client.cancel_step.side_effect = JuraWifiError("machine refused the request")
+    await _enable_brewing(hass, mock_config_entry)
+
+    with pytest.raises(HomeAssistantError, match="machine refused the request"):
+        await _press(hass, mock_config_entry, "cancel")
+
+
+async def test_switching_an_option_off_removes_its_buttons(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """Buttons of a disabled option do not linger as unavailable entities."""
+    await _enable_controls(hass, mock_config_entry, brewing=True, maintenance=True)
+    assert "brew_espresso" in _button_keys(hass, mock_config_entry)
+
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={
+            **mock_config_entry.options,
+            CONF_ENABLE_BREWING: False,
+            CONF_ENABLE_MAINTENANCE: True,
+        },
+    )
+    await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    keys = _button_keys(hass, mock_config_entry)
+    assert not {key for key in keys if key.startswith("brew_")}
+    assert {"start_cleaning", "cancel"} <= keys
+
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        options={
+            **mock_config_entry.options,
+            CONF_ENABLE_BREWING: False,
+            CONF_ENABLE_MAINTENANCE: False,
+        },
+    )
+    await hass.config_entries.async_reload(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert not _button_keys(hass, mock_config_entry)
 
 
 async def test_brew_blocked_product(

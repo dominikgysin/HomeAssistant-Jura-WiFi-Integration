@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect a JURA machine",
-        "description": "Enter the IP address of the Wi-Fi Connect dongle. The next step pairs Home Assistant with the machine, so switch it on, wake its display and disconnect the J.O.E. app.",
+        "description": "Enter the IP address of the Wi-Fi Connect dongle.\n\nBefore you continue, on the machine:\n\n1. Switch it on and **leave the settings menu**. The display has to show the start screen, otherwise the machine refuses the connection.\n2. **Close the J.O.E. app**. The dongle serves only one connection at a time.\n\nHome Assistant then pairs with the machine: confirm the request with **OK** on the machine.",
         "data": {
           "host": "IP address"
         },
@@ -13,7 +13,7 @@
       },
       "pair_failed": {
         "title": "Pairing failed",
-        "description": "Pairing with {host} did not work ({reason}). Make sure the machine is switched on, its display shows the home screen rather than a menu, and the J.O.E. app is disconnected. Then try again.",
+        "description": "Pairing with {host} did not work ({reason}).\n\nCheck on the machine:\n\n- **Leave the settings menu.** The display has to show the start screen; while a menu is open the machine cannot ask for the confirmation.\n- Close the J.O.E. app.\n- Confirm the request with **OK** within 60 seconds.\n\nThen try again.",
         "data": {
           "pin": "PIN"
         },
@@ -42,7 +42,7 @@
       },
       "reauth_confirm": {
         "title": "Pair again",
-        "description": "The machine at {host} no longer accepts the stored credentials. Switch it on and confirm the connection request on its display after you submit."
+        "description": "The machine at {host} no longer accepts the stored credentials. Switch it on, **leave the settings menu** (the display has to show the start screen) and close the J.O.E. app. Confirm the connection request on the display after you submit."
       },
       "reconfigure": {
         "title": "Change the address",
@@ -53,14 +53,16 @@
       }
     },
     "progress": {
-      "pair": "Look at the display of the machine at {host} and confirm the connection request with **OK** within 60 seconds.",
+      "pair": "Look at the display of the machine at {host} and confirm the connection request with **OK** within 60 seconds.\n\nNo request on the display? Leave the settings menu on the machine (back to the start screen) and try again.",
       "identify": "Reading the model from the machine at {host}…"
     },
     "error": {
       "cannot_connect": "The machine did not answer. Is it switched on and reachable from Home Assistant?",
       "invalid_auth": "The machine rejected the stored credentials.",
-      "pairing_timeout": "The connection request was not confirmed on the machine in time.",
-      "pairing_rejected": "The machine refused the connection request.",
+      "pairing_timeout": "The connection request was not confirmed on the machine in time. Leave the settings menu if one is open and try again.",
+      "pairing_rejected": "The machine refused the connection request. This happens in the settings menu or when the machine is busy: go back to the start screen and try again.",
+      "machine_in_menu": "The machine is in its settings menu and cannot ask for the confirmation. Leave the menu (back to the start screen) and try again.",
+      "machine_busy": "The machine is busy (brewing or running a maintenance program). Wait until it is finished and try again.",
       "wrong_pin": "The machine rejected the PIN.",
       "unknown_article": "This article number is not in the list of known JURA machines.",
       "unknown": "Unexpected error, see the Home Assistant log."
@@ -77,11 +79,13 @@
         "title": "JURA options",
         "data": {
           "scan_interval": "Update interval",
-          "enable_brewing": "Brew buttons"
+          "enable_brewing": "Brew buttons",
+          "enable_maintenance": "Maintenance buttons"
         },
         "data_description": {
           "scan_interval": "Seconds between two polls. The dongle accepts only one connection at a time, so do not go too low.",
-          "enable_brewing": "Add a button per drink that brews it with the factory-default recipe. Make sure a cup is in place before pressing."
+          "enable_brewing": "Add a button per drink that brews it with the recipe stored on the machine, as selected at its display. Make sure a cup is in place before pressing. Also adds a cancel button.",
+          "enable_maintenance": "Add buttons that start the maintenance programs of the machine (cleaning, descaling, milk system rinse, ...). The machine then asks for the confirmations on its display. Also adds a cancel button."
         }
       }
     }
@@ -131,7 +135,14 @@
       "cycles_milk_clean": { "name": "Milk system cleanings performed" }
     },
     "button": {
-      "brew": { "name": "Brew {product}" }
+      "brew": { "name": "Brew {product}" },
+      "cancel": { "name": "Cancel current action" },
+      "start_cleaning": { "name": "Start cleaning" },
+      "start_descale": { "name": "Start descaling" },
+      "start_filter_change": { "name": "Start filter change" },
+      "start_cappu_rinse": { "name": "Rinse milk system" },
+      "start_cappu_clean": { "name": "Clean milk system" },
+      "start_coffee_rinse": { "name": "Rinse coffee system" }
     }
   },
   "exceptions": {
@@ -155,6 +166,12 @@
     },
     "brew_failed": {
       "message": "Could not brew {product}: {error}"
+    },
+    "maintenance_failed": {
+      "message": "Could not start {program}: {error}"
+    },
+    "cancel_failed": {
+      "message": "Could not cancel the current action: {error}"
     }
   }
 }

@@ -10,9 +10,11 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.jura_wifi.api import (
     JuraWifiAuthError,
+    JuraWifiBusy,
     JuraWifiConnectionError,
     JuraWifiError,
     JuraWifiPairingTimeout,
+    MachineActivity,
     MachineIdentity,
 )
 from custom_components.jura_wifi.const import (
@@ -20,6 +22,7 @@ from custom_components.jura_wifi.const import (
     CONF_AUTH_HASH,
     CONF_CONN_ID,
     CONF_ENABLE_BREWING,
+    CONF_ENABLE_MAINTENANCE,
     CONF_FIRMWARE,
     CONF_MACHINE_TYPE,
     CONF_MODEL,
@@ -130,7 +133,11 @@ async def test_user_flow(
     assert result["data"][CONF_MODEL_SOURCE] == MODEL_SOURCE_DISCOVERY
     assert result["data"][CONF_AUTH_HASH] == AUTH_HASH
     assert result["data"][CONF_CONN_ID].startswith("homeassistant-")
-    assert result["options"] == {CONF_SCAN_INTERVAL: 60, CONF_ENABLE_BREWING: False}
+    assert result["options"] == {
+        CONF_SCAN_INTERVAL: 60,
+        CONF_ENABLE_BREWING: False,
+        CONF_ENABLE_MAINTENANCE: False,
+    }
     assert len(calls) == 1
     mock_discover.assert_called_once_with(HOST)
 
@@ -317,6 +324,10 @@ async def test_duplicate_host(
         (JuraWifiAuthError("ABORTED"), "pairing_rejected"),
         (JuraWifiConnectionError("refused"), "cannot_connect"),
         (JuraWifiError("garbled"), "unknown"),
+        # A machine in its settings menu cannot show the prompt: tell the user so.
+        (JuraWifiBusy(MachineActivity("programming")), "machine_in_menu"),
+        (JuraWifiBusy(MachineActivity("brewing", "espresso")), "machine_busy"),
+        (JuraWifiBusy(MachineActivity("busy", "hotwater_volume")), "machine_busy"),
     ],
 )
 async def test_pairing_errors_can_be_retried(
@@ -491,18 +502,28 @@ async def test_reconfigure(
     assert mock_config_entry.unique_id == NEW_HOST
 
 
-async def test_options_flow_enables_brewing(
+async def test_options_flow_enables_the_controls(
     hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
 ) -> None:
-    """Changing the options reloads the entry and adds the brew buttons."""
+    """Changing the options reloads the entry and adds the control buttons."""
     await setup_entry(hass, mock_config_entry)
 
     result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "init"
+    assert {str(key) for key in result["data_schema"].schema} == {
+        CONF_SCAN_INTERVAL,
+        CONF_ENABLE_BREWING,
+        CONF_ENABLE_MAINTENANCE,
+    }
 
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_SCAN_INTERVAL: 120, CONF_ENABLE_BREWING: True}
+        result["flow_id"],
+        {
+            CONF_SCAN_INTERVAL: 120,
+            CONF_ENABLE_BREWING: True,
+            CONF_ENABLE_MAINTENANCE: True,
+        },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
@@ -510,6 +531,7 @@ async def test_options_flow_enables_brewing(
     assert mock_config_entry.options == {
         CONF_SCAN_INTERVAL: 120,
         CONF_ENABLE_BREWING: True,
+        CONF_ENABLE_MAINTENANCE: True,
     }
     assert mock_config_entry.state is ConfigEntryState.LOADED
     registry = er.async_get(hass)
@@ -520,3 +542,27 @@ async def test_options_flow_enables_brewing(
         )
     )
     assert mock_config_entry.runtime_data.update_interval.total_seconds() == 120
+
+
+async def test_options_of_an_older_entry_have_no_maintenance_key(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """An entry from before the maintenance buttons gets the new switch, off."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry, options={CONF_SCAN_INTERVAL: 60, CONF_ENABLE_BREWING: True}
+    )
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+
+    # Submitting the form untouched fills in the default of the new switch.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_SCAN_INTERVAL: 60, CONF_ENABLE_BREWING: True}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {
+        CONF_SCAN_INTERVAL: 60,
+        CONF_ENABLE_BREWING: True,
+        CONF_ENABLE_MAINTENANCE: False,
+    }

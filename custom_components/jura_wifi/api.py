@@ -17,11 +17,21 @@ import time
 
 import ifaddr
 from jura_connect import (
+    KIND_BYPASS,
+    KIND_COFFEE_STRENGTH,
+    KIND_MILK_AMOUNT,
+    KIND_MILK_BREAK,
+    KIND_MILK_FOAM_AMOUNT,
+    KIND_TEMPERATURE,
+    KIND_WATER_AMOUNT,
     HandshakeError,
     JuraClient,
     MachineProfile,
     PairingTimeout,
+    ProductDef,
+    ProductParam,
     ProductProgress,
+    ProgressState,
     ProgressType,
     discover,
     is_progress_frame,
@@ -39,9 +49,26 @@ CONNECT_TIMEOUT = 5.0
 HANDSHAKE_TIMEOUT = 15.0
 READ_TIMEOUT = 10.0
 PAIRING_TIMEOUT = 60.0
+RECIPE_TIMEOUT = 3.0
 
 # The maintenance percent bank reports 0xFF for indicators a machine lacks.
 PERCENT_NOT_REPORTED = 0xFF
+
+# Millilitre parameters travel as one byte of 5 ml ticks.
+ML_PER_TICK = 5
+
+# The recipe parameters of a drink and the keyword with which ``JuraClient.brew``
+# takes each of them. The grinder parameters are left to the defaults of the
+# library: only one profile is known to use them and they are not verified.
+BREW_ARGUMENT_BY_KIND = {
+    KIND_COFFEE_STRENGTH: "strength",
+    KIND_WATER_AMOUNT: "ml",
+    KIND_TEMPERATURE: "temperature",
+    KIND_MILK_AMOUNT: "milk",
+    KIND_MILK_FOAM_AMOUNT: "milk_foam",
+    KIND_MILK_BREAK: "milk_break",
+    KIND_BYPASS: "bypass",
+}
 
 ACTIVITY_BREWING = "brewing"
 ACTIVITY_MAINTENANCE = "maintenance"
@@ -51,7 +78,6 @@ ACTIVITY_BUSY = "busy"
 _ACTIVITY_BY_PROGRESS_TYPE = {
     ProgressType.PRODUCT: ACTIVITY_BREWING,
     ProgressType.PROCESS: ACTIVITY_MAINTENANCE,
-    ProgressType.P_MODE: ACTIVITY_PROGRAMMING,
 }
 
 
@@ -193,12 +219,13 @@ def discover_machine(
 
 
 def describe_activity(
-    frames: Iterable[str], profile: MachineProfile
+    frames: Iterable[str], profile: MachineProfile | None
 ) -> MachineActivity | None:
     """Say what the machine is doing from the frames it pushed on its own.
 
     Only a session in which progress frames (``@TV:``) arrived but no status
-    frame (``@TF:``) counts as activity. Returns ``None`` otherwise.
+    frame (``@TF:``) counts as activity. Returns ``None`` otherwise. Without a
+    profile the drinks cannot be named, but the menu is still recognized.
     """
     pushed = [frame for frame in frames if frame.startswith(("@TF:", "@TV:"))]
     if not pushed or any(frame.startswith("@TF:") for frame in pushed):
@@ -207,14 +234,57 @@ def describe_activity(
         if not is_progress_frame(frame):
             continue
         progress = ProductProgress.parse(frame, profile)
+        # State FF is the settings menu whatever the next byte looks like; it
+        # must not turn into a drink because that byte happens to be a product code.
+        if progress.state is ProgressState.P_MODE:
+            return MachineActivity(ACTIVITY_PROGRAMMING)
         kind = _ACTIVITY_BY_PROGRESS_TYPE.get(progress.progress_type, ACTIVITY_BUSY)
-        if kind == ACTIVITY_PROGRAMMING:
-            return MachineActivity(kind)
         if kind == ACTIVITY_BUSY:
             return MachineActivity(kind, progress.state_name.lower())
         return MachineActivity(kind, progress.subject)
     # Only language-download or clock-sync frames: alive, but nothing to name.
     return MachineActivity(ACTIVITY_BUSY)
+
+
+def _decode_parameter(param: ProductParam, raw: int) -> int | None:
+    """Return the value in XML units that the library encodes to the byte ``raw``.
+
+    This is the inverse of :meth:`ProductParam.encode`. Millilitre parameters are
+    stored in ticks, everything else as it is; trying both and keeping the one
+    that encodes back to ``raw`` leaves no room for a wrong guess. ``None`` if the
+    byte is not a valid value for the parameter.
+    """
+    for candidate in (raw, raw * ML_PER_TICK):
+        try:
+            if param.encode(candidate) == raw:
+                return candidate
+        except ValueError:
+            continue
+    return None
+
+
+def recipe_from_stored(definition: ProductDef, stored: str) -> dict[str, int]:
+    """Turn the recipe stored on the machine into ``JuraClient.brew`` arguments.
+
+    ``stored`` is the hex payload the machine returns for a drink (``@TM:41``).
+    It uses the byte layout of the brew command, so the byte of every parameter is
+    read at the offset the machine profile gives for it. Parameters that are
+    missing or hold a value the profile does not accept are left out; the library
+    then takes its default for them.
+    """
+    try:
+        blob = bytes.fromhex(stored)
+    except ValueError:
+        return {}
+    arguments: dict[str, int] = {}
+    for param in definition.params:
+        keyword = BREW_ARGUMENT_BY_KIND.get(param.kind)
+        if keyword is None or param.offset >= len(blob):
+            continue
+        value = _decode_parameter(param, blob[param.offset])
+        if value is not None:
+            arguments[keyword] = value
+    return arguments
 
 
 class _SessionGate:
@@ -329,6 +399,9 @@ class JuraWifiClient:
 
         Blocks until the connect prompt on the machine was confirmed (or the
         pairing window of 60 seconds ran out). :meth:`cancel` ends it early.
+
+        Raises :class:`JuraWifiBusy` when pairing failed while the machine was in
+        its menu or busy, because it cannot show the connect prompt then.
         """
         with self._gate.session():
             if self._cancelled.is_set():
@@ -338,6 +411,7 @@ class JuraWifiClient:
             try:
                 result = client.pair(timeout=PAIRING_TIMEOUT, on_user_prompt=on_prompt)
             except PairingTimeout as err:
+                self._raise_if_busy(client, err)
                 raise JuraWifiPairingTimeout(str(err)) from err
             except OSError as err:
                 raise JuraWifiConnectionError(str(err) or type(err).__name__) from err
@@ -347,10 +421,21 @@ class JuraWifiClient:
                 self._pairing = None
                 client.close()
         if result.state != "CORRECT":
+            # A wrong PIN is certain; any other refusal may be a machine that is
+            # in its menu and cannot ask the user.
+            if result.state != "WRONG_PIN":
+                self._raise_if_busy(client, None)
             raise JuraWifiAuthError(result.state)
         if not result.new_hash:
             raise JuraWifiAuthError("NO_HASH")
         return result.new_hash
+
+    @staticmethod
+    def _raise_if_busy(client: JuraClient, cause: BaseException | None) -> None:
+        """Raise :class:`JuraWifiBusy` if the frames of the session show activity."""
+        activity = describe_activity(client.status_history, None)
+        if activity is not None:
+            raise JuraWifiBusy(activity) from cause
 
     def cancel(self) -> None:
         """Abort a pairing that is waiting or running (callable from any thread)."""
@@ -400,12 +485,44 @@ class JuraWifiClient:
             product_counts=dict(products.by_name) if products is not None else {},
         )
 
+    def _stored_recipe(self, client: JuraClient, product: str) -> dict[str, int]:
+        """Read the recipe the machine has stored for a drink, as ``brew`` arguments.
+
+        The machine keeps one recipe per drink, including what the user changed at
+        its display. The machine is asked for every drink, also for those that the
+        profile marks as not programmable: the E8 answers for them as well. An
+        empty dict means that the factory recipe of the profile is used: the
+        machine does not hand its recipes out, or the answer was unusable.
+        """
+        definition = next((p for p in self.profile.products if p.name == product), None)
+        if definition is None:
+            return {}
+        try:
+            stored = client.read_pmode_product(product, timeout=RECIPE_TIMEOUT)
+        except (ValueError, TimeoutError) as err:
+            _LOGGER.debug("No usable stored recipe for %s: %s", product, err)
+            return {}
+        if stored is None:
+            return {}
+        arguments = recipe_from_stored(definition, stored.blob)
+        _LOGGER.debug("Recipe of %s stored on the machine: %s", product, arguments)
+        return arguments
+
     def brew(self, product: str) -> None:
-        """Start a product with the factory-default recipe of the profile."""
+        """Start a drink with the recipe that is stored on the machine.
+
+        Falls back to the factory recipe of the profile if the machine does not
+        hand its recipes out.
+        """
         with self._gate.session():
             client = self._open()
             try:
-                reply = client.brew(product, retry=True)
+                arguments = self._stored_recipe(client, product)
+                reply = client.brew(product, retry=True, **arguments)
+            except TimeoutError as err:
+                raise JuraWifiError(
+                    "the machine did not answer the brew request"
+                ) from err
             except OSError as err:
                 raise JuraWifiConnectionError(str(err) or type(err).__name__) from err
             except Exception as err:
@@ -415,3 +532,44 @@ class JuraWifiClient:
         accepted = reply.strip().lower()
         if not accepted.startswith("@tp") or accepted.startswith("@tp:00"):
             raise JuraWifiError(f"machine rejected the request ({reply!r})")
+
+    def start_process(self, process: str) -> None:
+        """Start a maintenance program (cleaning, descaling, milk system rinse, ...).
+
+        Only the start is sent. The machine then leads the user through the program
+        on its display and waits there for the confirmations, e.g. for emptying the
+        drip tray or inserting a tablet.
+        """
+        with self._gate.session():
+            client = self._open()
+            try:
+                client.process_runner(process).start(timeout=READ_TIMEOUT)
+            except TimeoutError as err:
+                raise JuraWifiError(
+                    "the machine did not answer the start request"
+                ) from err
+            except OSError as err:
+                raise JuraWifiConnectionError(str(err) or type(err).__name__) from err
+            except Exception as err:
+                raise JuraWifiError(str(err)) from err
+            finally:
+                client.close()
+
+    def cancel_step(self) -> None:
+        """Cancel what the machine is doing: the running drink or maintenance step."""
+        with self._gate.session():
+            client = self._open()
+            try:
+                reply = client.request(
+                    "@TG:FF", match=r"(?i)^@(tg|an)", timeout=READ_TIMEOUT
+                )
+            except TimeoutError as err:
+                raise JuraWifiError(
+                    "the machine did not answer the cancel request"
+                ) from err
+            except OSError as err:
+                raise JuraWifiConnectionError(str(err) or type(err).__name__) from err
+            finally:
+                client.close()
+        if reply.strip().lower().startswith("@an:error"):
+            raise JuraWifiError(f"machine refused the request ({reply!r})")

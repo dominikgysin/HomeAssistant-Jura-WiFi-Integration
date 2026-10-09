@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "JURA-Maschine verbinden",
-        "description": "Gib die IP-Adresse des Wi-Fi-Connect-Sticks ein. Im nächsten Schritt wird Home Assistant mit der Maschine gekoppelt. Schalte sie dafür ein, wecke das Display und trenne die J.O.E.-App.",
+        "description": "Gib die IP-Adresse des Wi-Fi-Connect-Sticks ein.\n\nBevor du weitermachst, an der Maschine:\n\n1. Schalte sie ein und **verlasse das Einstellungsmenü**. Das Display muss den Startbildschirm zeigen, sonst lehnt die Maschine die Verbindung ab.\n2. **Schliesse die J.O.E.-App**. Der Stick bedient nur eine Verbindung gleichzeitig.\n\nDanach koppelt sich Home Assistant mit der Maschine: Bestätige die Anfrage mit **OK** an der Maschine.",
         "data": {
           "host": "IP-Adresse"
         },
@@ -13,7 +13,7 @@
       },
       "pair_failed": {
         "title": "Kopplung fehlgeschlagen",
-        "description": "Die Kopplung mit {host} hat nicht funktioniert ({reason}). Stelle sicher, dass die Maschine eingeschaltet ist, das Display den Startbildschirm statt eines Menüs zeigt und die J.O.E.-App getrennt ist. Versuche es dann erneut.",
+        "description": "Die Kopplung mit {host} hat nicht funktioniert ({reason}).\n\nPrüfe an der Maschine:\n\n- **Verlasse das Einstellungsmenü.** Das Display muss den Startbildschirm zeigen; solange ein Menü offen ist, kann die Maschine die Bestätigung nicht abfragen.\n- Schliesse die J.O.E.-App.\n- Bestätige die Anfrage innerhalb von 60 Sekunden mit **OK**.\n\nVersuche es dann erneut.",
         "data": {
           "pin": "PIN"
         },
@@ -42,7 +42,7 @@
       },
       "reauth_confirm": {
         "title": "Erneut koppeln",
-        "description": "Die Maschine unter {host} akzeptiert die gespeicherten Zugangsdaten nicht mehr. Schalte sie ein und bestätige nach dem Absenden die Verbindungsanfrage auf ihrem Display."
+        "description": "Die Maschine unter {host} akzeptiert die gespeicherten Zugangsdaten nicht mehr. Schalte sie ein, **verlasse das Einstellungsmenü** (das Display muss den Startbildschirm zeigen) und schliesse die J.O.E.-App. Bestätige nach dem Absenden die Verbindungsanfrage auf dem Display."
       },
       "reconfigure": {
         "title": "Adresse ändern",
@@ -53,14 +53,16 @@
       }
     },
     "progress": {
-      "pair": "Sieh auf das Display der Maschine unter {host} und bestätige die Verbindungsanfrage innerhalb von 60 Sekunden mit **OK**.",
+      "pair": "Sieh auf das Display der Maschine unter {host} und bestätige die Verbindungsanfrage innerhalb von 60 Sekunden mit **OK**.\n\nKeine Anfrage auf dem Display? Verlasse das Einstellungsmenü an der Maschine (zurück zum Startbildschirm) und versuche es erneut.",
       "identify": "Das Modell wird von der Maschine unter {host} gelesen…"
     },
     "error": {
       "cannot_connect": "Die Maschine antwortet nicht. Ist sie eingeschaltet und von Home Assistant aus erreichbar?",
       "invalid_auth": "Die Maschine hat die gespeicherten Zugangsdaten abgelehnt.",
-      "pairing_timeout": "Die Verbindungsanfrage wurde nicht rechtzeitig an der Maschine bestätigt.",
-      "pairing_rejected": "Die Maschine hat die Verbindungsanfrage abgelehnt.",
+      "pairing_timeout": "Die Verbindungsanfrage wurde nicht rechtzeitig an der Maschine bestätigt. Verlasse das Einstellungsmenü, falls eines offen ist, und versuche es erneut.",
+      "pairing_rejected": "Die Maschine hat die Verbindungsanfrage abgelehnt. Das passiert im Einstellungsmenü oder wenn die Maschine beschäftigt ist: Gehe zurück zum Startbildschirm und versuche es erneut.",
+      "machine_in_menu": "Die Maschine ist im Einstellungsmenü und kann die Bestätigung nicht abfragen. Verlasse das Menü (zurück zum Startbildschirm) und versuche es erneut.",
+      "machine_busy": "Die Maschine ist beschäftigt (Zubereitung oder Pflegeprogramm). Warte, bis sie fertig ist, und versuche es erneut.",
       "wrong_pin": "Die Maschine hat die PIN abgelehnt.",
       "unknown_article": "Diese Artikelnummer ist nicht in der Liste der bekannten JURA-Maschinen.",
       "unknown": "Unerwarteter Fehler, siehe Home-Assistant-Log."
@@ -77,11 +79,13 @@
         "title": "JURA-Optionen",
         "data": {
           "scan_interval": "Aktualisierungsintervall",
-          "enable_brewing": "Zubereitungs-Schaltflächen"
+          "enable_brewing": "Zubereitungs-Schaltflächen",
+          "enable_maintenance": "Pflegeprogramm-Schaltflächen"
         },
         "data_description": {
           "scan_interval": "Sekunden zwischen zwei Abfragen. Der Stick akzeptiert nur eine Verbindung gleichzeitig, daher nicht zu niedrig wählen.",
-          "enable_brewing": "Fügt pro Getränk eine Schaltfläche hinzu, die es mit dem Werksrezept zubereitet. Vor dem Drücken eine Tasse unterstellen."
+          "enable_brewing": "Fügt pro Getränk eine Schaltfläche hinzu, die es mit dem auf der Maschine gespeicherten Rezept zubereitet, so wie am Display eingestellt. Vor dem Drücken eine Tasse unterstellen. Fügt auch eine Abbrechen-Schaltfläche hinzu.",
+          "enable_maintenance": "Fügt Schaltflächen hinzu, die die Pflegeprogramme der Maschine starten (Reinigung, Entkalkung, Milchsystem spülen, ...). Die Bestätigungen fragt die Maschine danach auf ihrem Display ab. Fügt auch eine Abbrechen-Schaltfläche hinzu."
         }
       }
     }
@@ -131,7 +135,14 @@
       "cycles_milk_clean": { "name": "Milchsystem-Reinigungen durchgeführt" }
     },
     "button": {
-      "brew": { "name": "{product} zubereiten" }
+      "brew": { "name": "{product} zubereiten" },
+      "cancel": { "name": "Aktuelle Aktion abbrechen" },
+      "start_cleaning": { "name": "Reinigung starten" },
+      "start_descale": { "name": "Entkalkung starten" },
+      "start_filter_change": { "name": "Filterwechsel starten" },
+      "start_cappu_rinse": { "name": "Milchsystem spülen" },
+      "start_cappu_clean": { "name": "Milchsystem reinigen" },
+      "start_coffee_rinse": { "name": "Kaffeesystem spülen" }
     }
   },
   "exceptions": {
@@ -155,6 +166,12 @@
     },
     "brew_failed": {
       "message": "{product} konnte nicht zubereitet werden: {error}"
+    },
+    "maintenance_failed": {
+      "message": "{program} konnte nicht gestartet werden: {error}"
+    },
+    "cancel_failed": {
+      "message": "Die aktuelle Aktion konnte nicht abgebrochen werden: {error}"
     }
   }
 }

@@ -1,23 +1,33 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="custom_components/jura_wifi/brand/dark_logo@2x.png">
+    <img src="custom_components/jura_wifi/brand/logo@2x.png" alt="JURA Wi-Fi Connect for Home Assistant" height="96">
+  </picture>
+</p>
+
 # JURA Wi-Fi Connect for Home Assistant
 
 Local integration for JURA coffee machines with a **Wi-Fi Connect** dongle (the
 one the J.O.E. app uses). It talks directly to the dongle on TCP port 51515. No
 cloud, no JURA account.
 
+It reads the state, the counters and the maintenance needs of the machine, and
+it can brew your drinks and start the maintenance programs.
+
 It is built on the reverse-engineered
 [`jura-connect`](https://github.com/makefu/jura-connect) library (MIT), which
 bundles the machine profiles of the J.O.E. app. This project is not affiliated
-with JURA.
+with JURA. The logo is an original drawing and not related to any JURA logo.
 
 ## Status
 
 | Area | State |
 | --- | --- |
-| JURA E8 (SD) with Wi-Fi Connect V2 | pairing, status, counters and maintenance values verified on a real machine (read-only) |
-| Home Assistant side (config flow, entities, offline handling) | 127 automated tests pass on Home Assistant 2025.10 and 2026.10; the integration was also loaded in a Home Assistant test instance against the real E8 (read-only) |
-| Busy machine (menu, brewing, maintenance program) | the machine then pushes progress frames instead of status frames; decoded with the library, covered by tests using one frame captured from a real E8 in its menu |
+| JURA E8 (SDS) with Wi-Fi Connect V2 | pairing, status, counters, maintenance values and the stored drink recipes verified on a real machine (read-only), also while the machine is in energy-saving mode |
+| Home Assistant side (config flow, entities, offline handling) | automated tests pass on Home Assistant 2025.10 and 2026.10; the integration was also loaded in a Home Assistant test instance against the real E8 (read-only) |
+| Brewing, maintenance programs, cancel | the commands are tested end to end against the dongle simulator of the library (real protocol over TCP), **not yet run on a real machine through this integration** |
+| Busy machine (menu, brewing, maintenance program) | the machine then pushes progress frames instead of status frames; covered by tests using one frame captured from a real E8 in its menu |
 | Model detection | article number announced by UDP broadcast (same network as the dongle only), article number or model list as fallback; the UDP part is **not yet verified against a real machine** |
-| Brewing | opt-in, **not yet tried on an E8 (SD)** through this integration |
 | Other models | profiles for ~330 variants are bundled, untested |
 
 Requires Home Assistant **2025.10 or newer**.
@@ -39,6 +49,12 @@ Copy `custom_components/jura_wifi` into the `custom_components` folder of your
 Home Assistant configuration and restart Home Assistant.
 
 ### Setup
+
+> [!IMPORTANT]
+> **Leave the settings menu on the machine before you pair.** The display has to
+> show the start screen. While a menu is open the machine cannot show the
+> connection request and refuses the connection, which Home Assistant reports as
+> "The machine refused the connection request" (or "…is in its settings menu").
 
 1. The Wi-Fi Connect dongle has to be connected to your Wi-Fi already (set it up
    once with the J.O.E. app). Close the **J.O.E. app** afterwards: the dongle
@@ -70,10 +86,58 @@ Home Assistant configuration and restart Home Assistant.
 | Total brews, one counter per drink | `total_increasing`, keep their last value while the machine is off |
 | Cleaning need, descaling need, filter wear | percent of the interval used (filter wear is disabled by default) |
 | Maintenance cycle counters | diagnostic, disabled by default |
-| Brew buttons | only if enabled in the options, see below |
+| Brew buttons | one per drink, only if enabled in the options, see [Controls](#controls) |
+| Maintenance buttons | one per maintenance program of the machine, only if enabled in the options; in the configuration section of the device |
+| Cancel button | only together with one of the two sets above |
 
 Entities are created from the machine profile, so only what your model supports
 shows up.
+
+## Controls
+
+The buttons are off by default, because pressing one makes the machine do
+something. Switch them on under *Settings → Devices & services → JURA Wi-Fi
+Connect → Configure*:
+
+- **Brew buttons** adds a button per drink.
+- **Maintenance buttons** adds a button per maintenance program.
+
+Both also add a **cancel button**.
+
+### Brewing
+
+A press brews the drink **with the recipe that is stored on the machine**, the
+one you get when you select the drink at its display, including what you have
+adjusted there (strength, amount, foam time and so on). The recipe is read from
+the machine at the moment of the press. A machine that does not hand out its
+recipes brews the factory recipe of its profile instead.
+
+- Put a **cup under the spout** first. The machine cannot tell whether there is
+  one. For milk drinks the milk system has to be connected.
+- Drinks that are blocked by an active alert (for example an empty water tank)
+  are refused, and so is a second drink while the machine is busy.
+- A machine in energy-saving mode is woken up by the command. If it ignores the
+  first one while it wakes, the command is sent a second time; if it still does
+  not start, press the button again.
+- Use `button.press` in scripts and automations.
+
+### Maintenance programs
+
+A press **starts** the program (cleaning, descaling, filter change, milk system
+rinse, milk system cleaning, as far as your model has them). The machine then
+leads you through it **on its display** and waits there for what it needs: empty
+the drip tray, insert the tablet, confirm. Home Assistant does not confirm
+anything on its own.
+
+Cleaning and descaling take a long time and need the tablet or the descaler to
+be at hand, and a program should be run to its end. They only make sense when
+you are at the machine. The status sensor shows `maintenance` while one runs.
+
+### Cancel
+
+The cancel button sends the cancel command of the J.O.E. app: it stops the drink
+that is running or the current step of a maintenance program. It is available
+while the machine is busy, which is when it is needed.
 
 ## Options
 
@@ -81,10 +145,8 @@ shows up.
 
 - **Update interval** (30 to 900 s, default 60). One session with the dongle
   takes about 1.5 s.
-- **Brew buttons** (off by default). Adds a button per drink that brews it with
-  the *factory-default* recipe of the profile (not your personal settings). There
-  is no remote abort: put a cup under the spout first. Drinks that are blocked
-  by an active alert are refused.
+- **Brew buttons** and **Maintenance buttons** (both off by default), see
+  [Controls](#controls). Switching one off removes its buttons again.
 
 ## Things to know
 
@@ -98,8 +160,11 @@ shows up.
 - While the machine **brews, runs a maintenance program or shows its
   programming menu** it does not send its status, only what it is doing. The
   status then shows `brewing`, `maintenance` or `programming`, all other
-  entities keep the values of the last full poll, and the brew buttons refuse to
-  start another drink.
+  entities keep the values of the last full poll, and the buttons refuse to
+  start something else (the cancel button still works).
+- **Pairing is refused?** Leave the settings menu on the machine, close the
+  J.O.E. app and try again. Home Assistant tells you when it sees that the
+  machine is in its menu or busy; the reason of a refusal is also in the log.
 - If the dongle gets a new IP address, use *Reconfigure* on the integration.
 - If the machine forgets the pairing (for example after a dongle reset) Home
   Assistant asks to pair again.
@@ -116,7 +181,11 @@ ruff check . && ruff format --check .
 ```
 
 The Home Assistant test plugin needs a POSIX system (Linux, macOS, WSL or a dev
-container).
+container). The tests include end-to-end runs against the dongle simulator of
+the `jura-connect` library: real protocol over TCP on the loopback address.
+
+The brand images in `custom_components/jura_wifi/brand` are drawn by
+`scripts/make_brand_images.py` (needs Pillow).
 
 ## Credits
 

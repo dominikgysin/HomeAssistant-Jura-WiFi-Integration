@@ -14,8 +14,10 @@ from jura_connect.client import (
     MachineStatus,
     MaintenanceCounters,
     MaintenancePercent,
+    PModeProduct,
     ProductCounters,
 )
+from jura_connect.process import ProcessError
 from jura_connect.profile import _catalogue
 import pytest
 
@@ -31,10 +33,15 @@ from custom_components.jura_wifi.api import (
     MachineIdentity,
     describe_activity,
     discover_machine,
+    recipe_from_stored,
 )
 
-# A progress frame captured from a real E8 whose display sat in its menu.
-P_MODE_FRAME = "@TV:FF510000149305B9057F05AC058E"
+from .conftest import (
+    E8_ADJUSTED_DRINKS,
+    E8_RECIPE_ARGUMENTS,
+    E8_STORED_RECIPES,
+    P_MODE_FRAME,
+)
 
 MACHINE_INFO = MachineInfo(
     conn_id="homeassistant-12345678",
@@ -83,6 +90,9 @@ def fake() -> MagicMock:
             total=20, by_name={"espresso": 7}, by_code={}, raw_slots=()
         )
         fake.brew.return_value = "@tp"
+        # A machine that does not hand out its recipes: the factory ones are used.
+        fake.read_pmode_product.return_value = None
+        fake.status_history = []
         yield fake
 
 
@@ -179,6 +189,8 @@ def test_a_dropped_connection_is_not_activity(fake: MagicMock) -> None:
     ("frames", "expected"),
     [
         ([P_MODE_FRAME], MachineActivity("programming")),
+        # State FF is the menu even if the next byte happens to be a product code.
+        (["@TV:FF0200"], MachineActivity("programming")),
         (["@TV:3C0200"], MachineActivity("brewing", "espresso")),
         (["@TV:3E28"], MachineActivity("brewing", "americano")),
         (["@TV:7424"], MachineActivity("maintenance", "cleaning")),
@@ -196,6 +208,12 @@ def test_a_dropped_connection_is_not_activity(fake: MagicMock) -> None:
 def test_describe_activity(frames: list[str], expected: MachineActivity | None) -> None:
     """The progress frames name what the machine is doing."""
     assert describe_activity(frames, load_profile("EF1120")) == expected
+
+
+@pytest.mark.parametrize("frame", [P_MODE_FRAME, "@TV:FF0200"])
+def test_the_menu_is_recognized_without_a_profile(frame: str) -> None:
+    """While pairing there is no profile yet, but the menu is what matters."""
+    assert describe_activity([frame], None) == MachineActivity("programming")
 
 
 def test_unexpected_reply(fake: MagicMock) -> None:
@@ -251,6 +269,245 @@ def test_brew_accepted(fake: MagicMock) -> None:
     fake.close.assert_called_once()
 
 
+def _stored(product: str, blob: str) -> PModeProduct:
+    code = int(blob[:2], 16)
+    return PModeProduct(product_code=code, blob=blob, arguments={}, name=product)
+
+
+@pytest.mark.parametrize("product", sorted(E8_STORED_RECIPES))
+def test_brew_uses_the_recipe_stored_on_the_machine(
+    fake: MagicMock, product: str
+) -> None:
+    """The drink comes out the way it was set up at the display."""
+    fake.read_pmode_product.return_value = _stored(product, E8_STORED_RECIPES[product])
+
+    _client().brew(product)
+
+    fake.read_pmode_product.assert_called_once()
+    assert fake.read_pmode_product.call_args.args == (product,)
+    fake.brew.assert_called_once_with(
+        product, retry=True, **E8_RECIPE_ARGUMENTS[product]
+    )
+
+
+@pytest.mark.parametrize("product", sorted(E8_STORED_RECIPES))
+def test_the_stored_recipe_survives_the_round_trip_to_the_brew_blob(
+    product: str,
+) -> None:
+    """Brewing with the translated values puts the stored bytes on the wire."""
+    definition = next(p for p in load_profile("EF1120").products if p.name == product)
+    stored = E8_STORED_RECIPES[product]
+    keyword_to_kind = {v: k for k, v in api.BREW_ARGUMENT_BY_KIND.items()}
+
+    arguments = recipe_from_stored(definition, stored)
+    assert arguments == E8_RECIPE_ARGUMENTS[product]
+    blob = definition.build_recipe_hex(
+        {keyword_to_kind[key]: value for key, value in arguments.items()}
+    )
+
+    for param in definition.params:
+        start = param.offset * 2
+        assert blob[start : start + 2] == stored[start : start + 2], param.kind
+    # Everything else is what the library sends for any drink.
+    assert blob.startswith(f"{definition.code:02X}")
+    assert blob[16:18] == "01"
+    assert len(blob) == 32
+    # Some drinks were adjusted at the display and differ from the factory recipe,
+    # so the round trip is not just the defaults coming back.
+    assert (blob != definition.build_recipe_hex({})) == (product in E8_ADJUSTED_DRINKS)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        None,
+        ValueError("checksum mismatch"),
+        TimeoutError("no reply to '@TM:41,02'"),
+    ],
+)
+def test_brew_falls_back_to_the_factory_recipe(
+    fake: MagicMock, failure: Exception | None
+) -> None:
+    """A machine that keeps its recipes to itself must still be able to brew."""
+    if failure is None:
+        fake.read_pmode_product.return_value = None
+    else:
+        fake.read_pmode_product.side_effect = failure
+
+    _client().brew("espresso")
+
+    fake.brew.assert_called_once_with("espresso", retry=True)
+
+
+@pytest.mark.parametrize("product", ["cortado", "americano"])
+def test_brew_asks_the_machine_also_for_drinks_the_profile_calls_not_programmable(
+    fake: MagicMock, product: str
+) -> None:
+    """The profile says these have no product settings; the E8 has them anyway."""
+    definition = next(p for p in load_profile("EF1120").products if p.name == product)
+    assert not definition.product_settings
+    fake.read_pmode_product.return_value = _stored(product, E8_STORED_RECIPES[product])
+
+    _client().brew(product)
+
+    fake.read_pmode_product.assert_called_once()
+    fake.brew.assert_called_once_with(
+        product, retry=True, **E8_RECIPE_ARGUMENTS[product]
+    )
+
+
+def test_values_the_profile_does_not_accept_are_left_out() -> None:
+    """A byte that is not a valid value never reaches the machine."""
+    definition = next(p for p in load_profile("EF1120").products if p.name == "coffee")
+    # strength 0x0B is above the ten levels, 0x01 ml ticks are below the 25 ml minimum
+    stored = "03000B01000001000000000000"
+    assert recipe_from_stored(definition, stored) == {"temperature": 1}
+
+
+def test_a_stored_recipe_that_is_not_hex_is_ignored() -> None:
+    """Garbage from the machine means the factory recipe."""
+    definition = next(p for p in load_profile("EF1120").products if p.name == "coffee")
+    assert recipe_from_stored(definition, "not hex") == {}
+    assert recipe_from_stored(definition, "") == {}
+
+
+def test_a_short_stored_recipe_is_read_as_far_as_it_goes() -> None:
+    """Parameters past the end of the stored bytes are left to the library."""
+    definition = next(
+        p for p in load_profile("EF1120").products if p.name == "cappuccino"
+    )
+    assert recipe_from_stored(definition, "0400080C") == {"strength": 8, "ml": 60}
+
+
+def test_brew_timeout_is_not_an_outage(fake: MagicMock) -> None:
+    """The session worked, only the answer to the brew is missing."""
+    fake.brew.side_effect = TimeoutError("no reply")
+    with pytest.raises(JuraWifiError) as err:
+        _client().brew("espresso")
+    assert not isinstance(err.value, JuraWifiConnectionError)
+    fake.close.assert_called_once()
+
+
+def test_brew_connection_loss_is_an_outage(fake: MagicMock) -> None:
+    """A session that breaks off counts like an unreachable machine."""
+    fake.brew.side_effect = ConnectionResetError("reset by peer")
+    with pytest.raises(JuraWifiConnectionError):
+        _client().brew("espresso")
+
+
+def test_start_process(fake: MagicMock) -> None:
+    """Only the start is sent; the machine continues on its display."""
+    _client().start_process("cappu_rinse")
+
+    fake.process_runner.assert_called_once_with("cappu_rinse")
+    fake.process_runner.return_value.start.assert_called_once()
+    fake.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        (ProcessError("machine refused to start 'cleaning'"), JuraWifiError),
+        (TimeoutError("no reply"), JuraWifiError),
+        (ConnectionResetError("reset"), JuraWifiConnectionError),
+    ],
+)
+def test_start_process_failures(
+    fake: MagicMock, failure: Exception, expected: type[Exception]
+) -> None:
+    """A refusal or a missing answer is a failed command, a lost session an outage."""
+    fake.process_runner.return_value.start.side_effect = failure
+    with pytest.raises(expected) as err:
+        _client().start_process("cleaning")
+    if expected is JuraWifiError:
+        assert not isinstance(err.value, JuraWifiConnectionError)
+    fake.close.assert_called_once()
+
+
+def test_start_process_the_machine_does_not_declare(fake: MagicMock) -> None:
+    """The library refuses a program the profile does not know."""
+    fake.process_runner.side_effect = ProcessError("does not declare 'coffee_rinse'")
+    with pytest.raises(JuraWifiError, match="does not declare"):
+        _client().start_process("coffee_rinse")
+
+
+def test_cancel_step(fake: MagicMock) -> None:
+    """The cancel verb is sent and its echo accepted."""
+    fake.request.return_value = "@tg:FF"
+    _client().cancel_step()
+
+    assert fake.request.call_args.args == ("@TG:FF",)
+    fake.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("failure", "reply"),
+    [(None, "@an:error"), (TimeoutError("no reply"), "")],
+)
+def test_cancel_step_failures(
+    fake: MagicMock, failure: Exception | None, reply: str
+) -> None:
+    """A refusal or silence is a failed command, not an outage."""
+    fake.request.return_value = reply
+    fake.request.side_effect = failure
+    with pytest.raises(JuraWifiError) as err:
+        _client().cancel_step()
+    assert not isinstance(err.value, JuraWifiConnectionError)
+
+
+@pytest.mark.parametrize("state", ["ABORTED", "REJECTED:07", "WRONG_HASH"])
+def test_pairing_refused_in_the_menu(fake: MagicMock, state: str) -> None:
+    """A refusal while the machine sits in its menu is reported as such."""
+    fake.pair.return_value = HandshakeResult("@hp5", state, None)
+    fake.status_history = [P_MODE_FRAME]
+    with pytest.raises(JuraWifiBusy) as err:
+        _client().pair()
+    assert err.value.activity == MachineActivity("programming")
+
+
+def test_pairing_timeout_in_the_menu(fake: MagicMock) -> None:
+    """A machine that cannot show the prompt never answers, but pushes its state."""
+    fake.pair.side_effect = PairingTimeout("no @hp4/@hp5 reply")
+    fake.status_history = [P_MODE_FRAME, P_MODE_FRAME]
+    with pytest.raises(JuraWifiBusy) as err:
+        _client().pair()
+    assert err.value.activity.kind == "programming"
+    fake.close.assert_called_once()
+
+
+def test_pairing_while_the_machine_brews(fake: MagicMock) -> None:
+    """Without a profile the drink cannot be named, but the machine is busy."""
+    fake.pair.return_value = HandshakeResult("@hp5", "ABORTED", None)
+    fake.status_history = ["@TB", "@TV:41020000000000000000000000FF00000000"]
+    with pytest.raises(JuraWifiBusy) as err:
+        _client().pair()
+    assert err.value.activity == MachineActivity("busy", "hotwater_volume")
+
+
+def test_a_wrong_pin_stays_a_wrong_pin_in_the_menu(fake: MagicMock) -> None:
+    """The PIN is certain, whatever the machine is doing."""
+    fake.pair.return_value = HandshakeResult("@hp5", "WRONG_PIN", None)
+    fake.status_history = [P_MODE_FRAME]
+    with pytest.raises(JuraWifiAuthError) as err:
+        _client().pair()
+    assert err.value.reason == "WRONG_PIN"
+
+
+def test_pairing_refused_without_activity_stays_a_refusal(fake: MagicMock) -> None:
+    """Without pushed frames there is nothing to tell about the machine."""
+    fake.pair.return_value = HandshakeResult("@hp5", "ABORTED", None)
+    fake.status_history = []
+    with pytest.raises(JuraWifiAuthError) as err:
+        _client().pair()
+    assert err.value.reason == "ABORTED"
+
+
+def test_pairing_succeeds_even_if_the_machine_was_busy(fake: MagicMock) -> None:
+    """Pushed frames next to a successful pairing are of no interest."""
+    fake.status_history = [P_MODE_FRAME]
+    assert _client().pair() == "a" * 64
+
+
 @pytest.mark.parametrize("reply", ["@tp:00", "@an:error", ""])
 def test_brew_rejected(fake: MagicMock, reply: str) -> None:
     """Anything but a plain @tp is a rejection."""
@@ -264,6 +521,8 @@ def test_brew_unknown_product(fake: MagicMock) -> None:
     fake.brew.side_effect = ValueError("unknown product 'tea'")
     with pytest.raises(JuraWifiError, match="unknown product"):
         _client().brew("tea")
+    # there is no recipe to ask the machine for
+    fake.read_pmode_product.assert_not_called()
 
 
 def test_session_gap_is_enforced(fake: MagicMock, no_sleep: MagicMock) -> None:
