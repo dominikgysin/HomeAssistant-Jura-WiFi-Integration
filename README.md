@@ -168,6 +168,11 @@ while the machine is busy, which is when it is needed.
 - If the dongle gets a new IP address, use *Reconfigure* on the integration.
 - If the machine forgets the pairing (for example after a dongle reset) Home
   Assistant asks to pair again.
+- The **logo** needs Home Assistant 2026.3 or newer; older versions show the
+  grey "icon not available" placeholder for every custom integration. The
+  browser keeps brand images for up to a day: if the placeholder is still there
+  after an update, reload the page once or twice (the image is refreshed in the
+  background) or clear the site data of Home Assistant in the browser.
 - Debug logging: `logger: logs: custom_components.jura_wifi: debug` and
   `jura_connect: debug`. Diagnostics downloads redact the address and
   credentials.
