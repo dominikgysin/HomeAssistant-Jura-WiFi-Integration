@@ -187,6 +187,26 @@ the `jura-connect` library: real protocol over TCP on the loopback address.
 The brand images in `custom_components/jura_wifi/brand` are drawn by
 `scripts/make_brand_images.py` (needs Pillow).
 
+## Releases
+
+The versions follow [Semantic Versioning](https://semver.org/) and every change
+is listed in the [changelog](CHANGELOG.md). HACS offers the latest
+[GitHub release](https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/releases),
+so a change reaches the users when it is released, not when it is pushed.
+
+To make a release:
+
+1. Move the entries under *Unreleased* in `CHANGELOG.md` into a new section
+   `## [x.y.z] - date` and add its link at the bottom.
+2. Set the same version in `custom_components/jura_wifi/manifest.json` and in
+   `pyproject.toml`. A test fails if these and the changelog differ.
+3. Commit and push to `main`.
+4. Create the release from the text of the changelog:
+
+   ```
+   python scripts/release_notes.py x.y.z | gh release create vx.y.z --target main --title vx.y.z --notes-file -
+   ```
+
 ## Credits
 
 Protocol and machine profiles by the `jura-connect` project, which in turn
