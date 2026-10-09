@@ -1,0 +1,136 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "JURA-Maschine verbinden",
+        "description": "Gib die IP-Adresse des Wi-Fi-Connect-Sticks ein und wähle dein Maschinenmodell. Im nächsten Schritt wird Home Assistant mit der Maschine gekoppelt. Schalte sie dafür ein und bleibe vor dem Display.",
+        "data": {
+          "host": "IP-Adresse",
+          "model": "Maschinenmodell",
+          "pin": "PIN"
+        },
+        "data_description": {
+          "host": "Adresse des Wi-Fi-Connect-Sticks in deinem Netzwerk.",
+          "model": "Modellname inklusive Länderausführung, z. B. \"E8 (SD)\". Tippe, um die Liste zu durchsuchen.",
+          "pin": "Nur nötig, wenn an der Maschine eine Setup-PIN gesetzt ist. Sonst leer lassen."
+        }
+      },
+      "pair_failed": {
+        "title": "Kopplung fehlgeschlagen",
+        "description": "Die Kopplung mit {host} hat nicht funktioniert. Stelle sicher, dass die Maschine eingeschaltet und das Display aktiv ist, und versuche es erneut.",
+        "data": {
+          "pin": "PIN"
+        },
+        "data_description": {
+          "pin": "Setup-PIN der Maschine. Leer lassen, wenn keine gesetzt ist."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Erneut koppeln",
+        "description": "Die Maschine unter {host} akzeptiert die gespeicherten Zugangsdaten nicht mehr. Schalte sie ein und bestätige nach dem Absenden die Verbindungsanfrage auf ihrem Display."
+      },
+      "reconfigure": {
+        "title": "Adresse ändern",
+        "description": "Gib die neue IP-Adresse des Wi-Fi-Connect-Sticks ein.",
+        "data": {
+          "host": "IP-Adresse"
+        }
+      }
+    },
+    "progress": {
+      "pair": "Sieh auf das Display der Maschine unter {host} und bestätige die Verbindungsanfrage innerhalb von 60 Sekunden mit **OK**."
+    },
+    "error": {
+      "cannot_connect": "Die Maschine antwortet nicht. Ist sie eingeschaltet und von Home Assistant aus erreichbar?",
+      "invalid_auth": "Die Maschine hat die gespeicherten Zugangsdaten abgelehnt.",
+      "pairing_timeout": "Die Verbindungsanfrage wurde nicht rechtzeitig an der Maschine bestätigt.",
+      "pairing_rejected": "Die Maschine hat die Verbindungsanfrage abgelehnt.",
+      "wrong_pin": "Die Maschine hat die PIN abgelehnt.",
+      "unknown": "Unerwarteter Fehler, siehe Home-Assistant-Log."
+    },
+    "abort": {
+      "already_configured": "Diese Maschine ist bereits eingerichtet.",
+      "reauth_successful": "Kopplung erfolgreich, die Maschine ist wieder verbunden.",
+      "reconfigure_successful": "Die Adresse wurde aktualisiert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "JURA-Optionen",
+        "data": {
+          "scan_interval": "Aktualisierungsintervall",
+          "enable_brewing": "Zubereitungs-Schaltflächen"
+        },
+        "data_description": {
+          "scan_interval": "Sekunden zwischen zwei Abfragen. Der Stick akzeptiert nur eine Verbindung gleichzeitig, daher nicht zu niedrig wählen.",
+          "enable_brewing": "Fügt pro Getränk eine Schaltfläche hinzu, die es mit dem Werksrezept zubereitet. Vor dem Drücken eine Tasse unterstellen."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connectivity": { "name": "Verbindung" },
+      "water_tank_empty": { "name": "Wassertank leer" },
+      "grounds_container_full": { "name": "Kaffeesatzbehälter voll" },
+      "drip_tray_full": { "name": "Abtropfschale voll" },
+      "drip_tray_missing": { "name": "Abtropfschale fehlt" },
+      "grounds_container_missing": { "name": "Kaffeesatzbehälter fehlt" },
+      "beans_empty": { "name": "Bohnenbehälter leer" },
+      "cleaning_due": { "name": "Reinigung fällig" },
+      "descaling_due": { "name": "Entkalkung fällig" },
+      "filter_change_due": { "name": "Filterwechsel fällig" },
+      "milk_rinse_due": { "name": "Milchsystem-Spülung fällig" },
+      "milk_clean_due": { "name": "Milchsystem-Reinigung fällig" }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "offline": "Offline",
+          "attention": "Eingriff nötig",
+          "rinsing": "Spült",
+          "heating_up": "Heizt auf",
+          "busy": "Beschäftigt",
+          "energy_saving": "Energiesparmodus",
+          "ready": "Bereit"
+        }
+      },
+      "total_brews": { "name": "Zubereitungen gesamt" },
+      "product_brews": { "name": "Anzahl {product}" },
+      "cleaning_need": { "name": "Reinigungsbedarf" },
+      "descaling_need": { "name": "Entkalkungsbedarf" },
+      "filter_wear": { "name": "Filterverbrauch" },
+      "cycles_cleaning": { "name": "Reinigungen durchgeführt" },
+      "cycles_descale": { "name": "Entkalkungen durchgeführt" },
+      "cycles_filter_change": { "name": "Filterwechsel durchgeführt" },
+      "cycles_milk_rinse": { "name": "Milchsystem-Spülungen durchgeführt" },
+      "cycles_coffee_rinse": { "name": "Kaffeesystem-Spülungen durchgeführt" },
+      "cycles_milk_clean": { "name": "Milchsystem-Reinigungen durchgeführt" }
+    },
+    "button": {
+      "brew": { "name": "{product} zubereiten" }
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "Die Maschine hat die gespeicherten Zugangsdaten abgelehnt. Bitte erneut koppeln."
+    },
+    "update_failed": {
+      "message": "Unerwartete Antwort der Maschine: {error}"
+    },
+    "unknown_machine_type": {
+      "message": "Kein Profil für den Maschinentyp {machine_type}."
+    },
+    "machine_offline": {
+      "message": "Die Maschine ist nicht erreichbar."
+    },
+    "product_blocked": {
+      "message": "{product} kann gerade nicht zubereitet werden. Prüfe die Maschine auf aktive Meldungen."
+    },
+    "brew_failed": {
+      "message": "{product} konnte nicht zubereitet werden: {error}"
+    }
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect a JURA machine",
+        "description": "Enter the IP address of the Wi-Fi Connect dongle and pick your machine model. The next step pairs Home Assistant with the machine, so switch it on and stay in front of its display.",
+        "data": {
+          "host": "IP address",
+          "model": "Machine model",
+          "pin": "PIN"
+        },
+        "data_description": {
+          "host": "Address of the Wi-Fi Connect dongle in your network.",
+          "model": "The model name including the regional variant, e.g. \"E8 (SD)\". Type to search the list.",
+          "pin": "Only needed if a setup PIN is set on the machine. Leave empty otherwise."
+        }
+      },
+      "pair_failed": {
+        "title": "Pairing failed",
+        "description": "Pairing with {host} did not work. Make sure the machine is switched on and its display is active, then try again.",
+        "data": {
+          "pin": "PIN"
+        },
+        "data_description": {
+          "pin": "The setup PIN of the machine. Leave empty if none is set."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Pair again",
+        "description": "The machine at {host} no longer accepts the stored credentials. Switch it on and confirm the connection request on its display after you submit."
+      },
+      "reconfigure": {
+        "title": "Change the address",
+        "description": "Enter the new IP address of the Wi-Fi Connect dongle.",
+        "data": {
+          "host": "IP address"
+        }
+      }
+    },
+    "progress": {
+      "pair": "Look at the display of the machine at {host} and confirm the connection request with **OK** within 60 seconds."
+    },
+    "error": {
+      "cannot_connect": "The machine did not answer. Is it switched on and reachable from Home Assistant?",
+      "invalid_auth": "The machine rejected the stored credentials.",
+      "pairing_timeout": "The connection request was not confirmed on the machine in time.",
+      "pairing_rejected": "The machine refused the connection request.",
+      "wrong_pin": "The machine rejected the PIN.",
+      "unknown": "Unexpected error, see the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This machine is already configured.",
+      "reauth_successful": "Pairing succeeded, the machine is connected again.",
+      "reconfigure_successful": "The address was updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "JURA options",
+        "data": {
+          "scan_interval": "Update interval",
+          "enable_brewing": "Brew buttons"
+        },
+        "data_description": {
+          "scan_interval": "Seconds between two polls. The dongle accepts only one connection at a time, so do not go too low.",
+          "enable_brewing": "Add a button per drink that brews it with the factory-default recipe. Make sure a cup is in place before pressing."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connectivity": { "name": "Connection" },
+      "water_tank_empty": { "name": "Water tank empty" },
+      "grounds_container_full": { "name": "Grounds container full" },
+      "drip_tray_full": { "name": "Drip tray full" },
+      "drip_tray_missing": { "name": "Drip tray missing" },
+      "grounds_container_missing": { "name": "Grounds container missing" },
+      "beans_empty": { "name": "Beans empty" },
+      "cleaning_due": { "name": "Cleaning due" },
+      "descaling_due": { "name": "Descaling due" },
+      "filter_change_due": { "name": "Filter change due" },
+      "milk_rinse_due": { "name": "Milk system rinse due" },
+      "milk_clean_due": { "name": "Milk system cleaning due" }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "offline": "Offline",
+          "attention": "Needs attention",
+          "rinsing": "Rinsing",
+          "heating_up": "Heating up",
+          "busy": "Busy",
+          "energy_saving": "Energy saving",
+          "ready": "Ready"
+        }
+      },
+      "total_brews": { "name": "Total brews" },
+      "product_brews": { "name": "{product} count" },
+      "cleaning_need": { "name": "Cleaning need" },
+      "descaling_need": { "name": "Descaling need" },
+      "filter_wear": { "name": "Filter wear" },
+      "cycles_cleaning": { "name": "Cleanings performed" },
+      "cycles_descale": { "name": "Descalings performed" },
+      "cycles_filter_change": { "name": "Filter changes performed" },
+      "cycles_milk_rinse": { "name": "Milk system rinses performed" },
+      "cycles_coffee_rinse": { "name": "Coffee system rinses performed" },
+      "cycles_milk_clean": { "name": "Milk system cleanings performed" }
+    },
+    "button": {
+      "brew": { "name": "Brew {product}" }
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "The machine rejected the stored credentials. Pair it again."
+    },
+    "update_failed": {
+      "message": "Unexpected reply from the machine: {error}"
+    },
+    "unknown_machine_type": {
+      "message": "No profile for machine type {machine_type}."
+    },
+    "machine_offline": {
+      "message": "The machine is not reachable."
+    },
+    "product_blocked": {
+      "message": "{product} cannot be brewed right now. Check the machine for active alerts."
+    },
+    "brew_failed": {
+      "message": "Could not brew {product}: {error}"
+    }
+  }
+}

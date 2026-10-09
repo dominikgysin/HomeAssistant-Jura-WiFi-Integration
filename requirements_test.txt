@@ -1,0 +1,3 @@
+pytest-homeassistant-custom-component
+jura-connect==0.14.0
+ruff

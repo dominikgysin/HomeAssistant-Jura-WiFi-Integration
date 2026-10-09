@@ -1,0 +1,32 @@
+{
+  "entity": {
+    "sensor": {
+      "status": {
+        "default": "mdi:coffee-maker",
+        "state": {
+          "offline": "mdi:coffee-off",
+          "attention": "mdi:alert-circle",
+          "rinsing": "mdi:water",
+          "heating_up": "mdi:fire",
+          "busy": "mdi:timer-sand",
+          "energy_saving": "mdi:leaf",
+          "ready": "mdi:coffee-maker"
+        }
+      },
+      "total_brews": { "default": "mdi:coffee" },
+      "product_brews": { "default": "mdi:coffee-outline" },
+      "cleaning_need": { "default": "mdi:spray-bottle" },
+      "descaling_need": { "default": "mdi:flask-outline" },
+      "filter_wear": { "default": "mdi:filter" },
+      "cycles_cleaning": { "default": "mdi:counter" },
+      "cycles_descale": { "default": "mdi:counter" },
+      "cycles_filter_change": { "default": "mdi:counter" },
+      "cycles_milk_rinse": { "default": "mdi:counter" },
+      "cycles_coffee_rinse": { "default": "mdi:counter" },
+      "cycles_milk_clean": { "default": "mdi:counter" }
+    },
+    "button": {
+      "brew": { "default": "mdi:coffee" }
+    }
+  }
+}
