@@ -206,6 +206,12 @@ The brand images in `custom_components/jura_wifi/brand` are drawn by
 its absolute address and avoids `<picture>`, because HACS shows relative images
 broken and `<picture>` as text.
 
+The workflows in `.github/workflows` check the repository with
+[hassfest](https://developers.home-assistant.io/blog/2020/04/16/hassfest/) and the
+[HACS action](https://hacs.xyz/docs/publish/action) on every push and every
+night. HACS requires both to pass, without ignored checks, before it takes an
+integration into its default list, so keep them green.
+
 ## Releases
 
 The versions follow [Semantic Versioning](https://semver.org/) and every change
@@ -225,6 +231,12 @@ To make a release:
    ```
    python scripts/release_notes.py x.y.z | gh release create vx.y.z --target main --title vx.y.z --notes-file -
    ```
+
+   Create the release only after the workflows of that commit have passed.
+
+## License
+
+[MIT](https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/blob/main/LICENSE).
 
 ## Credits
 

@@ -8,6 +8,6 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/issues",
   "loggers": ["jura_connect"],
-  "requirements": ["ifaddr>=0.2.0", "jura-connect==0.14.0"],
-  "version": "0.4.0"
+  "requirements": ["jura-connect==0.14.0"],
+  "version": "0.4.1"
 }

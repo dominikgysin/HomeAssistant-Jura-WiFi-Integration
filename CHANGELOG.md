@@ -7,6 +7,23 @@ version may change behaviour.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-09
+
+### Added
+
+- MIT license.
+- GitHub workflows that check the repository with hassfest and the HACS action
+  on every push and every night. HACS requires both to pass before it takes an
+  integration into its default list.
+
+### Changed
+
+- The manifest no longer lists `ifaddr`. Home Assistant itself requires it (the
+  same version is installed with every Home Assistant), and hassfest rejects it in
+  the manifest of a custom integration.
+
+The behaviour of the integration is unchanged.
+
 ## [0.4.0] - 2026-10-09
 
 ### Added
@@ -96,7 +113,8 @@ version may change behaviour.
   status, problem and maintenance sensors and brew counters; opt-in brew buttons
   with the factory recipes; diagnostics; English and German translations.
 
-[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.2.0...v0.2.1
