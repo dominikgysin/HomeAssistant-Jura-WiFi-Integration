@@ -9,19 +9,26 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping
 import contextlib
 import dataclasses
+import ipaddress
 import logging
+import socket
 import threading
 import time
 
+import ifaddr
 from jura_connect import (
     HandshakeError,
     JuraClient,
     MachineProfile,
     PairingTimeout,
+    discover,
+    list_profile_codes,
     load_profile,
+    lookup_by_article_number,
+    probe,
 )
 
-from .const import SESSION_GAP_SECONDS
+from .const import DISCOVERY_TIMEOUT, SESSION_GAP_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,6 +73,83 @@ class MachineSnapshot:
     maintenance_percent: Mapping[str, int]
     total_brews: int | None
     product_counts: Mapping[str, int]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class MachineIdentity:
+    """What the discovery reply of the dongle says about its machine.
+
+    ``ef_code`` and ``model_name`` are ``None`` when the article number is not
+    in the catalogue of the J.O.E. app that ships with the library, or when the
+    library has no profile for that machine type.
+    """
+
+    article_number: int
+    firmware: str
+    ef_code: str | None
+    model_name: str | None
+
+
+def _broadcast_targets(host_ip: str) -> list[str]:
+    """Return the broadcast addresses to scan: global, every local network, host /24."""
+    targets = {"255.255.255.255"}
+    try:
+        for adapter in ifaddr.get_adapters():
+            for address in adapter.ips:
+                ip = address.ip
+                if not address.is_IPv4 or not isinstance(ip, str):
+                    continue
+                if ip.startswith(("127.", "169.254.")):
+                    continue
+                network = ipaddress.IPv4Network(
+                    f"{ip}/{address.network_prefix}", strict=False
+                )
+                if network.prefixlen < 31:
+                    targets.add(str(network.broadcast_address))
+    except OSError as err:
+        _LOGGER.debug("Could not list the network adapters: %s", err)
+    with contextlib.suppress(ValueError):
+        targets.add(
+            str(ipaddress.IPv4Network(f"{host_ip}/24", strict=False).broadcast_address)
+        )
+    return sorted(targets)
+
+
+def discover_machine(
+    host: str, timeout: float = DISCOVERY_TIMEOUT
+) -> MachineIdentity | None:
+    """Read the machine identity from the UDP discovery reply of the dongle.
+
+    This is how the J.O.E. app learns the article number. It only works when
+    Home Assistant is in the same network as the dongle, because the dongle
+    answers broadcasts and broadcasts do not cross routers. Returns ``None`` if
+    nothing answered. Blocking.
+    """
+    try:
+        host_ip = socket.gethostbyname(host)
+    except OSError:
+        return None
+    machine = None
+    try:
+        machine = probe(host_ip, timeout=1.5)
+        if machine is None:
+            for found in discover(timeout=timeout, targets=_broadcast_targets(host_ip)):
+                if found.address == host_ip:
+                    machine = found
+                    break
+    except OSError as err:
+        _LOGGER.debug("UDP discovery of %s failed: %s", host, err)
+        return None
+    if machine is None:
+        return None
+    entry = lookup_by_article_number(machine.article_number)
+    known = entry is not None and entry.ef_code in set(list_profile_codes())
+    return MachineIdentity(
+        article_number=machine.article_number,
+        firmware=machine.fw,
+        ef_code=entry.ef_code if entry is not None and known else None,
+        model_name=entry.friendly_name if entry is not None and known else None,
+    )
 
 
 class _SessionGate:
@@ -142,7 +226,7 @@ class JuraWifiClient:
                 ) from err
         return self._profile
 
-    def _new_client(self, auth_hash: str) -> JuraClient:
+    def _new_client(self, auth_hash: str, *, with_profile: bool = True) -> JuraClient:
         return JuraClient(
             self.host,
             self.port,
@@ -151,7 +235,7 @@ class JuraWifiClient:
             auth_hash=auth_hash,
             connect_timeout=CONNECT_TIMEOUT,
             read_timeout=READ_TIMEOUT,
-            profile=self.profile,
+            profile=self.profile if with_profile else None,
         )
 
     def _open(self) -> JuraClient:
@@ -184,7 +268,7 @@ class JuraWifiClient:
         with self._gate.session():
             if self._cancelled.is_set():
                 raise JuraWifiError("pairing was cancelled")
-            client = self._new_client("")
+            client = self._new_client("", with_profile=False)
             self._pairing = client
             try:
                 result = client.pair(timeout=PAIRING_TIMEOUT, on_user_prompt=on_prompt)

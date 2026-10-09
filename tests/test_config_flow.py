@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -13,17 +13,24 @@ from custom_components.jura_wifi.api import (
     JuraWifiConnectionError,
     JuraWifiError,
     JuraWifiPairingTimeout,
+    MachineIdentity,
 )
 from custom_components.jura_wifi.const import (
+    CONF_ARTICLE_NUMBER,
     CONF_AUTH_HASH,
     CONF_CONN_ID,
     CONF_ENABLE_BREWING,
+    CONF_FIRMWARE,
     CONF_MACHINE_TYPE,
     CONF_MODEL,
     CONF_MODEL_NAME,
+    CONF_MODEL_SOURCE,
     CONF_PIN,
     CONF_SCAN_INTERVAL,
     DOMAIN,
+    MODEL_SOURCE_ARTICLE,
+    MODEL_SOURCE_DISCOVERY,
+    MODEL_SOURCE_MANUAL,
 )
 from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
@@ -31,9 +38,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
 
-from .conftest import AUTH_HASH, HOST, setup_entry
+from .conftest import AUTH_HASH, HOST, IDENTITY, setup_entry
 
-USER_INPUT = {CONF_HOST: HOST, CONF_MODEL: "EF1120|E8 (SD)", CONF_PIN: ""}
+USER_INPUT = {CONF_HOST: HOST}
 
 
 async def _submit_user_input(hass: HomeAssistant) -> dict:
@@ -51,6 +58,18 @@ async def _settle(hass: HomeAssistant, result: dict) -> dict:
         await hass.async_block_till_done()
         result = await hass.config_entries.flow.async_configure(result["flow_id"])
     return result
+
+
+async def _pair(hass: HomeAssistant, release: threading.Event) -> dict:
+    """Submit the address, let the pairing end while it is shown and settle.
+
+    The pairing must still be running when the address is submitted, otherwise
+    Home Assistant would hand the submitted address on to the following step.
+    """
+    result = await _submit_user_input(hass)
+    assert result["type"] is FlowResultType.SHOW_PROGRESS
+    release.set()
+    return await _settle(hass, result)
 
 
 def _pair_outcomes(
@@ -78,11 +97,19 @@ def _pair_outcomes(
     return calls, release
 
 
-async def test_user_flow(hass: HomeAssistant, mock_client: MagicMock) -> None:
-    """Pairing shows a progress step until confirmed, then creates the entry."""
+async def test_user_flow(
+    hass: HomeAssistant, mock_client: MagicMock, mock_discover: MagicMock
+) -> None:
+    """Only the address is asked; the model is read from the machine."""
     calls, release = _pair_outcomes(mock_client, AUTH_HASH)
 
-    result = await _submit_user_input(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    assert [str(key) for key in result["data_schema"].schema] == [CONF_HOST]
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], USER_INPUT
+    )
     assert result["type"] is FlowResultType.SHOW_PROGRESS
     assert result["step_id"] == "pair"
     assert result["progress_action"] == "pair"
@@ -92,30 +119,179 @@ async def test_user_flow(hass: HomeAssistant, mock_client: MagicMock) -> None:
     result = await _settle(hass, result)
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == "JURA E8 (SD)"
+    assert result["title"] == "JURA E8 (SDS)"
     assert result["result"].unique_id == HOST
     assert result["data"][CONF_HOST] == HOST
     assert result["data"][CONF_PORT] == 51515
     assert result["data"][CONF_MACHINE_TYPE] == "EF1120"
-    assert result["data"][CONF_MODEL_NAME] == "E8 (SD)"
+    assert result["data"][CONF_MODEL_NAME] == "E8 (SDS)"
+    assert result["data"][CONF_ARTICLE_NUMBER] == 15833
+    assert result["data"][CONF_FIRMWARE] == "TT237W V06.11"
+    assert result["data"][CONF_MODEL_SOURCE] == MODEL_SOURCE_DISCOVERY
     assert result["data"][CONF_AUTH_HASH] == AUTH_HASH
     assert result["data"][CONF_CONN_ID].startswith("homeassistant-")
     assert result["options"] == {CONF_SCAN_INTERVAL: 60, CONF_ENABLE_BREWING: False}
     assert len(calls) == 1
+    mock_discover.assert_called_once_with(HOST)
 
 
-async def test_model_list_contains_the_e8(
+async def test_discovery_runs_after_pairing(
+    hass: HomeAssistant, mock_client: MagicMock, mock_discover: MagicMock
+) -> None:
+    """The model is read only once the machine accepted the pairing."""
+    _, release = _pair_outcomes(mock_client, JuraWifiPairingTimeout("no"))
+
+    result = await _pair(hass, release)
+    assert result["step_id"] == "pair_failed"
+    mock_discover.assert_not_called()
+
+
+async def test_identify_shows_progress_while_searching(
     hass: HomeAssistant, mock_client: MagicMock
 ) -> None:
-    """The selector offers the models that have a bundled profile."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
+    """The search of the model is visible as its own progress step."""
+    found = threading.Event()
+
+    def slow_discovery(host: str) -> MachineIdentity:
+        found.wait(5)
+        return IDENTITY
+
+    _, release = _pair_outcomes(mock_client, AUTH_HASH)
+
+    # A plain function, because the harness runs executor jobs of mocks inline.
+    with patch(
+        "custom_components.jura_wifi.config_flow.discover_machine", slow_discovery
+    ):
+        result = await _submit_user_input(hass)
+        assert result["step_id"] == "pair"
+        release.set()
+        while result["type"] is FlowResultType.SHOW_PROGRESS and (
+            result["step_id"] != "identify"
+        ):
+            await hass.async_block_till_done()
+            result = await hass.config_entries.flow.async_configure(result["flow_id"])
+        assert result["type"] is FlowResultType.SHOW_PROGRESS
+        assert result["step_id"] == "identify"
+        assert result["progress_action"] == "identify"
+        assert result["description_placeholders"] == {"host": HOST}
+
+        found.set()
+        result = await _settle(hass, result)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_MODEL_NAME] == "E8 (SDS)"
+
+
+async def test_article_number_when_the_machine_does_not_announce_itself(
+    hass: HomeAssistant, mock_client: MagicMock, mock_discover: MagicMock
+) -> None:
+    """Without a discovery reply the article number from the app is asked for."""
+    mock_discover.return_value = None
+    _, release = _pair_outcomes(mock_client, AUTH_HASH)
+
+    result = await _pair(hass, release)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "article"
+    assert [str(key) for key in result["data_schema"].schema] == [CONF_ARTICLE_NUMBER]
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ARTICLE_NUMBER: " 15833 "}
     )
-    schema = result["data_schema"].schema
-    selector = next(v for k, v in schema.items() if k == CONF_MODEL)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "JURA E8 (SDS)"
+    assert result["data"][CONF_MACHINE_TYPE] == "EF1120"
+    assert result["data"][CONF_MODEL_NAME] == "E8 (SDS)"
+    assert result["data"][CONF_ARTICLE_NUMBER] == 15833
+    assert result["data"][CONF_FIRMWARE] is None
+    assert result["data"][CONF_MODEL_SOURCE] == MODEL_SOURCE_ARTICLE
+
+
+@pytest.mark.parametrize("typed", ["99999", "abc", "15,833", "E8"])
+async def test_unknown_article_number_can_be_corrected(
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    mock_discover: MagicMock,
+    typed: str,
+) -> None:
+    """An article number that is not in the catalogue is rejected."""
+    mock_discover.return_value = None
+    _, release = _pair_outcomes(mock_client, AUTH_HASH)
+
+    result = await _pair(hass, release)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ARTICLE_NUMBER: typed}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "article"
+    assert result["errors"] == {"base": "unknown_article"}
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ARTICLE_NUMBER: "15713"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_MODEL_NAME] == "E8 (SD)"
+
+
+async def test_empty_article_number_opens_the_model_list(
+    hass: HomeAssistant, mock_client: MagicMock, mock_discover: MagicMock
+) -> None:
+    """The list of all models is the last resort."""
+    mock_discover.return_value = None
+    _, release = _pair_outcomes(mock_client, AUTH_HASH)
+
+    result = await _pair(hass, release)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ARTICLE_NUMBER: ""}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "model"
+    selector = result["data_schema"].schema[CONF_MODEL]
     values = {option["value"] for option in selector.config["options"]}
-    assert "EF1120|E8 (SD)" in values
+    assert "EF1120|E8 (SDS)" in values
     assert "EF1091|S8 (EB)" in values
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_MODEL: "EF1120|E8 (SD)"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_MACHINE_TYPE] == "EF1120"
+    assert result["data"][CONF_MODEL_NAME] == "E8 (SD)"
+    assert result["data"][CONF_ARTICLE_NUMBER] is None
+    assert result["data"][CONF_MODEL_SOURCE] == MODEL_SOURCE_MANUAL
+
+
+async def test_article_missing_from_the_catalogue_keeps_what_was_learned(
+    hass: HomeAssistant, mock_client: MagicMock, mock_discover: MagicMock
+) -> None:
+    """A reply with an unknown article still tells the firmware and the article."""
+    mock_discover.return_value = MachineIdentity(
+        article_number=19999, firmware="TT237W V09.99", ef_code=None, model_name=None
+    )
+    _, release = _pair_outcomes(mock_client, AUTH_HASH)
+
+    result = await _pair(hass, release)
+    assert result["step_id"] == "article"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_ARTICLE_NUMBER: ""}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_MODEL: "EF1120|E8 (SDS)"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_ARTICLE_NUMBER] == 19999
+    assert result["data"][CONF_FIRMWARE] == "TT237W V09.99"
+    assert result["data"][CONF_MODEL_SOURCE] == MODEL_SOURCE_MANUAL
+
+
+async def test_discovery_errors_fall_back_to_the_article_number(
+    hass: HomeAssistant, mock_client: MagicMock, mock_discover: MagicMock
+) -> None:
+    """A crash while reading the model never blocks the setup."""
+    mock_discover.side_effect = RuntimeError("boom")
+    _, release = _pair_outcomes(mock_client, AUTH_HASH)
+
+    result = await _pair(hass, release)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "article"
 
 
 async def test_duplicate_host(
@@ -160,6 +336,9 @@ async def test_pairing_errors_can_be_retried(
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "pair_failed"
     assert result["errors"] == {"base": expected}
+    # The reason reported by the machine is shown to make refusals diagnosable.
+    assert result["description_placeholders"]["host"] == HOST
+    assert result["description_placeholders"]["reason"] != "-"
 
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     result = await _settle(hass, result)
@@ -225,9 +404,12 @@ async def test_closing_the_flow_releases_the_dongle(
 
 
 async def test_reauth(
-    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    mock_discover: MagicMock,
+    mock_config_entry: MockConfigEntry,
 ) -> None:
-    """Pairing again replaces the stored credentials."""
+    """Pairing again replaces the stored credentials and keeps the model."""
     mock_client.pair.return_value = "b" * 64
     mock_config_entry.add_to_hass(hass)
 
@@ -243,6 +425,8 @@ async def test_reauth(
     assert mock_config_entry.data[CONF_AUTH_HASH] == "b" * 64
     assert mock_config_entry.data[CONF_CONN_ID] != "homeassistant-12345678"
     assert mock_config_entry.data[CONF_HOST] == HOST
+    assert mock_config_entry.data[CONF_MODEL_NAME] == "E8 (SDS)"
+    mock_discover.assert_not_called()
     await hass.async_block_till_done()
     assert mock_config_entry.state is ConfigEntryState.LOADED
 

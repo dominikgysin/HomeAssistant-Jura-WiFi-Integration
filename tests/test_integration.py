@@ -18,14 +18,21 @@ from custom_components.jura_wifi.api import (
     JuraWifiConnectionError,
     JuraWifiError,
 )
-from custom_components.jura_wifi.const import CONF_ENABLE_BREWING, DOMAIN
+from custom_components.jura_wifi.const import (
+    CONF_ARTICLE_NUMBER,
+    CONF_ENABLE_BREWING,
+    CONF_FIRMWARE,
+    CONF_MODEL_SOURCE,
+    DOMAIN,
+    MODEL_SOURCE_MANUAL,
+)
 from custom_components.jura_wifi.coordinator import JuraWifiData
 from custom_components.jura_wifi.diagnostics import async_get_config_entry_diagnostics
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .conftest import AUTH_HASH, HOST, SNAPSHOT, setup_entry
 
@@ -48,6 +55,16 @@ async def _poll(hass: HomeAssistant, freezer) -> None:
     freezer.tick(timedelta(seconds=61))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
+
+
+def _device(hass: HomeAssistant, entry: ConfigEntry) -> dr.DeviceEntry:
+    """Return the device of the entry, found through its model sensor."""
+    entity = er.async_get(hass).async_get(_entity_id(hass, "sensor", entry, "model"))
+    assert entity is not None
+    assert entity.device_id is not None
+    device = dr.async_get(hass).async_get(entity.device_id)
+    assert device is not None
+    return device
 
 
 async def test_setup_and_unload(
@@ -77,6 +94,98 @@ async def test_sensor_states(
     )
     assert _state(hass, "sensor", mock_config_entry, "cleaning_need").state == "10"
     assert _state(hass, "sensor", mock_config_entry, "descaling_need").state == "0"
+
+
+async def test_model_sensor(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """The exact model read from the machine is exposed as a diagnostic sensor."""
+    await setup_entry(hass, mock_config_entry)
+
+    state = _state(hass, "sensor", mock_config_entry, "model")
+    assert state.state == "E8 (SDS)"
+    assert state.attributes["article_number"] == 15833
+    assert state.attributes["machine_type"] == "EF1120"
+    assert state.attributes["firmware"] == "TT237W V06.11"
+    assert state.attributes["source"] == "discovery"
+
+    entry = er.async_get(hass).async_get(
+        _entity_id(hass, "sensor", mock_config_entry, "model")
+    )
+    assert entry is not None
+    assert entry.entity_category is er.EntityCategory.DIAGNOSTIC
+    assert entry.disabled_by is None
+
+
+async def test_model_sensor_is_available_while_the_machine_is_off(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """The model does not depend on the machine answering."""
+    mock_client.fetch.side_effect = JuraWifiConnectionError("down")
+    await setup_entry(hass, mock_config_entry)
+
+    assert _state(hass, "sensor", mock_config_entry, "status").state == "offline"
+    assert _state(hass, "sensor", mock_config_entry, "model").state == "E8 (SDS)"
+
+
+async def test_device_describes_the_model(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """The device shows the model, the article number and the firmware."""
+    await setup_entry(hass, mock_config_entry)
+
+    device = _device(hass, mock_config_entry)
+    assert device.identifiers == {(DOMAIN, mock_config_entry.entry_id)}
+    assert device.manufacturer == "JURA"
+    assert device.model == "E8 (SDS)"
+    assert device.model_id == "15833"
+    assert device.sw_version == "TT237W V06.11"
+
+
+async def test_manually_chosen_model_has_no_article_number(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """Without an article number the profile code identifies the model."""
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_config_entry,
+        data={
+            **mock_config_entry.data,
+            CONF_ARTICLE_NUMBER: None,
+            CONF_FIRMWARE: None,
+            CONF_MODEL_SOURCE: MODEL_SOURCE_MANUAL,
+        },
+    )
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = _state(hass, "sensor", mock_config_entry, "model")
+    assert state.attributes == {
+        "machine_type": "EF1120",
+        "source": "manual",
+        "friendly_name": "JURA E8 (SDS) Model",
+    }
+    device = _device(hass, mock_config_entry)
+    assert device.model_id == "EF1120"
+    assert device.sw_version is None
+
+
+async def test_entries_from_older_versions_still_load(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """Entries created before the model detection have none of the new keys."""
+    data = {
+        key: value
+        for key, value in mock_config_entry.data.items()
+        if key not in (CONF_ARTICLE_NUMBER, CONF_FIRMWARE, CONF_MODEL_SOURCE)
+    }
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(mock_config_entry, data=data)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    assert _state(hass, "sensor", mock_config_entry, "model").state == "E8 (SDS)"
 
 
 async def test_diagnostic_sensors_are_disabled_by_default(

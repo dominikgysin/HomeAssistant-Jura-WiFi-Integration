@@ -13,6 +13,7 @@
           "ready": "mdi:coffee-maker"
         }
       },
+      "model": { "default": "mdi:coffee-maker-outline" },
       "total_brews": { "default": "mdi:coffee" },
       "product_brews": { "default": "mdi:coffee-outline" },
       "cleaning_need": { "default": "mdi:spray-bottle" },

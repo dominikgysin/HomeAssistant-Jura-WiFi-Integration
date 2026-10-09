@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import socket
 import threading
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from jura_connect import PairingTimeout
+from jura_connect import Machine, PairingTimeout, list_profile_codes
 from jura_connect.client import (
     HandshakeResult,
     MachineInfo,
@@ -14,6 +16,7 @@ from jura_connect.client import (
     MaintenancePercent,
     ProductCounters,
 )
+from jura_connect.profile import _catalogue
 import pytest
 
 from custom_components.jura_wifi import api
@@ -23,6 +26,8 @@ from custom_components.jura_wifi.api import (
     JuraWifiConnectionError,
     JuraWifiError,
     JuraWifiPairingTimeout,
+    MachineIdentity,
+    discover_machine,
 )
 
 MACHINE_INFO = MachineInfo(
@@ -321,3 +326,146 @@ def test_unknown_machine_type() -> None:
     """A machine type without a bundled profile is reported."""
     with pytest.raises(JuraWifiError, match="unknown machine type"):
         _ = JuraWifiClient("h", 51515, "c", "a", "", "EF0").profile
+
+
+def test_pairing_does_not_need_the_model(fake: MagicMock) -> None:
+    """The model is read after the pairing, so no profile can be loaded for it."""
+    client = JuraWifiClient("192.0.2.10", 51515, "ha-1", "", "", "")
+    assert client.pair() == "a" * 64
+    assert api.JuraClient.call_args.kwargs["profile"] is None
+
+
+def _machine(address: str = "192.0.2.10", article: int = 15833) -> Machine:
+    return Machine(
+        address=address,
+        name="Coffeemaker",
+        fw="TT237W V06.11",
+        hw_id="",
+        article_number=article,
+        machine_number=1,
+        serial_number=2,
+        production_date=None,
+        uchi_production_date=None,
+        status_flags=0x10,
+        status_hex="",
+        raw=b"",
+    )
+
+
+@pytest.fixture
+def udp() -> SimpleNamespace:
+    """Replace the UDP functions of the library; nothing answers by default."""
+    with (
+        patch.object(api, "probe", return_value=None) as probe,
+        patch.object(api, "discover", side_effect=lambda **_: iter(())) as discover,
+        patch.object(api, "_broadcast_targets", return_value=["255.255.255.255"]),
+    ):
+        yield SimpleNamespace(probe=probe, discover=discover)
+
+
+def test_discovery_reads_the_identity_from_the_broadcast_reply(
+    udp: SimpleNamespace,
+) -> None:
+    """The J.O.E. app learns the article number the same way."""
+    udp.discover.side_effect = lambda **_: iter(
+        [_machine("192.0.2.99", 15713), _machine()]
+    )
+    assert discover_machine("192.0.2.10") == MachineIdentity(
+        article_number=15833,
+        firmware="TT237W V06.11",
+        ef_code="EF1120",
+        model_name="E8 (SDS)",
+    )
+    assert udp.discover.call_args.kwargs["targets"] == ["255.255.255.255"]
+
+
+def test_discovery_uses_a_unicast_reply_when_there_is_one(udp: SimpleNamespace) -> None:
+    """Dongles that answer a direct probe need no broadcast."""
+    udp.probe.return_value = _machine()
+    identity = discover_machine("192.0.2.10")
+    assert identity is not None
+    assert identity.model_name == "E8 (SDS)"
+    udp.discover.assert_not_called()
+
+
+def test_discovery_ignores_other_machines(udp: SimpleNamespace) -> None:
+    """A reply from another dongle in the network must not be taken over."""
+    udp.discover.side_effect = lambda **_: iter([_machine("192.0.2.99")])
+    assert discover_machine("192.0.2.10") is None
+
+
+def test_discovery_without_a_reply(udp: SimpleNamespace) -> None:
+    """Another network or a silent dongle gives no identity."""
+    assert discover_machine("192.0.2.10") is None
+
+
+def test_discovery_with_an_article_the_catalogue_does_not_know(
+    udp: SimpleNamespace,
+) -> None:
+    """The article number and firmware are still reported."""
+    udp.probe.return_value = _machine(article=19999)
+    assert discover_machine("192.0.2.10") == MachineIdentity(
+        article_number=19999, firmware="TT237W V06.11", ef_code=None, model_name=None
+    )
+
+
+def test_discovery_with_a_machine_type_without_a_profile(udp: SimpleNamespace) -> None:
+    """A catalogue entry the library has no profile for cannot be used."""
+    supported = set(list_profile_codes())
+    entry = next(e for e in _catalogue() if e.ef_code not in supported)
+    udp.probe.return_value = _machine(article=entry.article_number)
+    identity = discover_machine("192.0.2.10")
+    assert identity is not None
+    assert identity.article_number == entry.article_number
+    assert identity.ef_code is None
+    assert identity.model_name is None
+
+
+@pytest.mark.parametrize("failing", ["probe", "discover"])
+def test_discovery_survives_network_errors(udp: SimpleNamespace, failing: str) -> None:
+    """A port that cannot be bound is not an error for the setup."""
+    getattr(udp, failing).side_effect = OSError("address in use")
+    assert discover_machine("192.0.2.10") is None
+
+
+def test_discovery_with_an_unresolvable_host(udp: SimpleNamespace) -> None:
+    """A host name that does not resolve gives no identity."""
+    with patch.object(api.socket, "gethostbyname", side_effect=socket.gaierror):
+        assert discover_machine("no-such-host.invalid") is None
+    udp.probe.assert_not_called()
+
+
+def test_broadcast_targets_cover_every_local_network() -> None:
+    """Every IPv4 network of the host is scanned, plus the one of the dongle."""
+
+    def ip(address: object, prefix: int, *, v4: bool = True) -> SimpleNamespace:
+        return SimpleNamespace(ip=address, network_prefix=prefix, is_IPv4=v4)
+
+    adapters = [
+        SimpleNamespace(
+            ips=[
+                ip("198.51.100.20", 24),
+                ip(("fe80::1", 0, 0), 64, v4=False),
+                ip("127.0.0.1", 8),
+                ip("169.254.3.4", 16),
+                ip("10.0.5.9", 16),
+                ip("10.9.9.9", 32),
+            ]
+        )
+    ]
+    with patch.object(api.ifaddr, "get_adapters", return_value=adapters):
+        assert api._broadcast_targets("172.16.4.7") == [
+            "10.0.255.255",
+            "172.16.4.255",
+            "198.51.100.255",
+            "255.255.255.255",
+        ]
+
+
+def test_broadcast_targets_without_adapter_information() -> None:
+    """The global broadcast and the network of the dongle always remain."""
+    with patch.object(api.ifaddr, "get_adapters", side_effect=OSError("denied")):
+        assert api._broadcast_targets("172.16.4.7") == [
+            "172.16.4.255",
+            "255.255.255.255",
+        ]

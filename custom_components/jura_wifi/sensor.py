@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from jura_connect import ProductDef
 
@@ -18,6 +19,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
+from .const import (
+    CONF_ARTICLE_NUMBER,
+    CONF_FIRMWARE,
+    CONF_MACHINE_TYPE,
+    CONF_MODEL_NAME,
+    CONF_MODEL_SOURCE,
+)
 from .coordinator import JuraWifiConfigEntry, JuraWifiCoordinator, JuraWifiData
 from .entity import JuraWifiEntity
 from .status import STATUSES, machine_status
@@ -131,8 +139,9 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     profile = coordinator.profile
 
-    entities: list[JuraWifiSensor] = [
+    entities: list[SensorEntity] = [
         JuraWifiStatusSensor(coordinator, STATUS_DESCRIPTION),
+        JuraWifiModelSensor(coordinator),
         JuraWifiSensor(coordinator, TOTAL_BREWS_DESCRIPTION),
     ]
     entities.extend(
@@ -171,6 +180,45 @@ class JuraWifiSensor(JuraWifiEntity, SensorEntity):
     def native_value(self) -> StateType:
         """Return the sensor value."""
         return self.entity_description.value_fn(self.coordinator.data)
+
+
+class JuraWifiModelSensor(JuraWifiEntity, SensorEntity):
+    """The exact model, as read from the machine when it was set up."""
+
+    entity_description = SensorEntityDescription(
+        key="model",
+        translation_key="model",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    )
+
+    def __init__(self, coordinator: JuraWifiCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, "model")
+
+    @property
+    def available(self) -> bool:
+        """The model is known even while the machine is switched off."""
+        return True
+
+    @property
+    def native_value(self) -> str:
+        """Return the model designation, e.g. ``E8 (SDS)``."""
+        data = self.coordinator.config_entry.data
+        return data.get(CONF_MODEL_NAME) or data[CONF_MACHINE_TYPE]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the article number, the profile code and the firmware."""
+        data = self.coordinator.config_entry.data
+        attributes: dict[str, Any] = {"machine_type": data[CONF_MACHINE_TYPE]}
+        for attribute, key in (
+            ("article_number", CONF_ARTICLE_NUMBER),
+            ("firmware", CONF_FIRMWARE),
+            ("source", CONF_MODEL_SOURCE),
+        ):
+            if data.get(key):
+                attributes[attribute] = data[key]
+        return attributes
 
 
 class JuraWifiStatusSensor(JuraWifiSensor):

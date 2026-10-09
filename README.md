@@ -14,7 +14,8 @@ with JURA.
 | Area | State |
 | --- | --- |
 | JURA E8 (SD) with Wi-Fi Connect V2 | pairing, status, counters and maintenance values verified on a real machine (read-only) |
-| Home Assistant side (config flow, entities, offline handling) | 72 automated tests pass on Home Assistant 2025.10, 2026.9 and 2026.10; the integration was also loaded in a Home Assistant test instance against the real E8 (read-only) |
+| Home Assistant side (config flow, entities, offline handling) | 98 automated tests pass on Home Assistant 2025.10 and 2026.10; the integration was also loaded in a Home Assistant test instance against the real E8 (read-only) |
+| Model detection | article number announced by UDP broadcast (same network as the dongle only), article number or model list as fallback; the UDP part is **not yet verified against a real machine** |
 | Brewing | opt-in, **not yet tried on an E8 (SD)** through this integration |
 | Other models | profiles for ~330 variants are bundled, untested |
 
@@ -39,19 +40,29 @@ Home Assistant configuration and restart Home Assistant.
 ### Setup
 
 1. The Wi-Fi Connect dongle has to be connected to your Wi-Fi already (set it up
-   once with the J.O.E. app).
-2. *Settings → Devices & services → Add integration → JURA Wi-Fi Connect*.
-3. Enter the **IP address of the dongle** (give it a fixed lease in your router)
-   and pick your **model**, e.g. `E8 (SD) [EF1120]`. The article name is shown in
-   the J.O.E. app; type to search the list.
-4. Switch the machine on, wake its display and confirm the **connection request
-   with OK** within 60 seconds. Home Assistant stores the credentials issued by
-   the machine; the request only appears once.
+   once with the J.O.E. app). Close the **J.O.E. app** afterwards: the dongle
+   serves one connection at a time.
+2. Switch the machine on and leave its display on the **start screen** (no menu
+   open).
+3. *Settings → Devices & services → Add integration → JURA Wi-Fi Connect*.
+4. Enter the **IP address of the dongle** (give it a fixed lease in your router).
+5. Confirm the **connection request with OK** on the machine within 60 seconds.
+   Home Assistant stores the credentials issued by the machine; the request only
+   appears once.
+6. The **exact model is read from the machine** and kept in the
+   [Model sensor](#entities). The machine announces its article number by UDP
+   broadcast, which does not leave the local network. If Home Assistant is in
+   another network than the dongle (VLAN, routed subnet) the setup asks for the
+   **article number** instead: it is shown in the J.O.E. app next to the machine
+   name and on the type plate on the underside of the machine (for example
+   `15833` = E8 (SDS)). Leave it empty to pick the model from a list as a last
+   resort.
 
 ## Entities
 
 | Entity | Notes |
 | --- | --- |
+| Model (sensor) | diagnostic; the exact model, e.g. `E8 (SDS)`. Attributes: article number, machine profile (e.g. `EF1120`), firmware if known, and how the model was found (`discovery`, `article` or `manual`). The device page shows the same as model, model ID and firmware. |
 | Status (sensor) | `offline`, `attention`, `rinsing`, `heating_up`, `busy`, `energy_saving`, `ready`. The raw alerts are available as attributes. |
 | Connection (binary sensor) | diagnostic; off while the machine does not answer |
 | Problem sensors | water tank empty, grounds container full/missing, drip tray full/missing, beans empty, cleaning / descaling / filter / milk system rinse / milk system cleaning due |

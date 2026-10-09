@@ -3,26 +3,41 @@
     "step": {
       "user": {
         "title": "JURA-Maschine verbinden",
-        "description": "Gib die IP-Adresse des Wi-Fi-Connect-Sticks ein und wähle dein Maschinenmodell. Im nächsten Schritt wird Home Assistant mit der Maschine gekoppelt. Schalte sie dafür ein und bleibe vor dem Display.",
+        "description": "Gib die IP-Adresse des Wi-Fi-Connect-Sticks ein. Im nächsten Schritt wird Home Assistant mit der Maschine gekoppelt. Schalte sie dafür ein, wecke das Display und trenne die J.O.E.-App.",
         "data": {
-          "host": "IP-Adresse",
-          "model": "Maschinenmodell",
-          "pin": "PIN"
+          "host": "IP-Adresse"
         },
         "data_description": {
-          "host": "Adresse des Wi-Fi-Connect-Sticks in deinem Netzwerk.",
-          "model": "Modellname inklusive Länderausführung, z. B. \"E8 (SD)\". Tippe, um die Liste zu durchsuchen.",
-          "pin": "Nur nötig, wenn an der Maschine eine Setup-PIN gesetzt ist. Sonst leer lassen."
+          "host": "Adresse des Wi-Fi-Connect-Sticks in deinem Netzwerk."
         }
       },
       "pair_failed": {
         "title": "Kopplung fehlgeschlagen",
-        "description": "Die Kopplung mit {host} hat nicht funktioniert. Stelle sicher, dass die Maschine eingeschaltet und das Display aktiv ist, und versuche es erneut.",
+        "description": "Die Kopplung mit {host} hat nicht funktioniert ({reason}). Stelle sicher, dass die Maschine eingeschaltet ist, das Display den Startbildschirm statt eines Menüs zeigt und die J.O.E.-App getrennt ist. Versuche es dann erneut.",
         "data": {
           "pin": "PIN"
         },
         "data_description": {
           "pin": "Setup-PIN der Maschine. Leer lassen, wenn keine gesetzt ist."
+        }
+      },
+      "article": {
+        "title": "Welches Modell ist es?",
+        "description": "Das Modell konnte nicht von der Maschine gelesen werden, meist weil Home Assistant in einem anderen Netz als der Stick ist. Gib die Artikelnummer ein: Du findest sie in der J.O.E.-App neben dem Maschinennamen (zum Beispiel 15833) und auf dem Typenschild an der Unterseite der Maschine. Leer lassen, um das Modell aus einer Liste zu wählen.",
+        "data": {
+          "article_number": "Artikelnummer"
+        },
+        "data_description": {
+          "article_number": "Fünf Ziffern, zum Beispiel 15833."
+        }
+      },
+      "model": {
+        "title": "Modell wählen",
+        "data": {
+          "model": "Maschinenmodell"
+        },
+        "data_description": {
+          "model": "Modellname inklusive Länderausführung, z. B. \"E8 (SDS)\". Tippe, um die Liste zu durchsuchen."
         }
       },
       "reauth_confirm": {
@@ -38,7 +53,8 @@
       }
     },
     "progress": {
-      "pair": "Sieh auf das Display der Maschine unter {host} und bestätige die Verbindungsanfrage innerhalb von 60 Sekunden mit **OK**."
+      "pair": "Sieh auf das Display der Maschine unter {host} und bestätige die Verbindungsanfrage innerhalb von 60 Sekunden mit **OK**.",
+      "identify": "Das Modell wird von der Maschine unter {host} gelesen…"
     },
     "error": {
       "cannot_connect": "Die Maschine antwortet nicht. Ist sie eingeschaltet und von Home Assistant aus erreichbar?",
@@ -46,6 +62,7 @@
       "pairing_timeout": "Die Verbindungsanfrage wurde nicht rechtzeitig an der Maschine bestätigt.",
       "pairing_rejected": "Die Maschine hat die Verbindungsanfrage abgelehnt.",
       "wrong_pin": "Die Maschine hat die PIN abgelehnt.",
+      "unknown_article": "Diese Artikelnummer ist nicht in der Liste der bekannten JURA-Maschinen.",
       "unknown": "Unerwarteter Fehler, siehe Home-Assistant-Log."
     },
     "abort": {
@@ -97,6 +114,7 @@
           "ready": "Bereit"
         }
       },
+      "model": { "name": "Modell" },
       "total_brews": { "name": "Zubereitungen gesamt" },
       "product_brews": { "name": "Anzahl {product}" },
       "cleaning_need": { "name": "Reinigungsbedarf" },

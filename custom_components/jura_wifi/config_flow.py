@@ -8,7 +8,11 @@ import logging
 from typing import Any
 import uuid
 
-from jura_connect import known_machine_names, list_profile_codes
+from jura_connect import (
+    known_machine_names,
+    list_profile_codes,
+    lookup_by_article_number,
+)
 import voluptuous as vol
 
 from homeassistant.config_entries import (
@@ -39,14 +43,19 @@ from .api import (
     JuraWifiConnectionError,
     JuraWifiError,
     JuraWifiPairingTimeout,
+    MachineIdentity,
+    discover_machine,
 )
 from .const import (
+    CONF_ARTICLE_NUMBER,
     CONF_AUTH_HASH,
     CONF_CONN_ID,
     CONF_ENABLE_BREWING,
+    CONF_FIRMWARE,
     CONF_MACHINE_TYPE,
     CONF_MODEL,
     CONF_MODEL_NAME,
+    CONF_MODEL_SOURCE,
     CONF_PIN,
     CONF_SCAN_INTERVAL,
     DEFAULT_PORT,
@@ -54,6 +63,9 @@ from .const import (
     DOMAIN,
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
+    MODEL_SOURCE_ARTICLE,
+    MODEL_SOURCE_DISCOVERY,
+    MODEL_SOURCE_MANUAL,
 )
 from .coordinator import JuraWifiConfigEntry
 
@@ -75,6 +87,20 @@ def _machine_options() -> list[SelectOptionDict]:
     ]
 
 
+def _resolve_article(raw: str) -> tuple[int, str, str] | None:
+    """Look up an article number as ``(number, model name, EF code)`` (blocking).
+
+    Only models the library has a profile for count as known.
+    """
+    text = raw.strip()
+    if not text.isdigit():
+        return None
+    entry = lookup_by_article_number(int(text))
+    if entry is None or entry.ef_code not in set(list_profile_codes()):
+        return None
+    return entry.article_number, entry.friendly_name, entry.ef_code
+
+
 class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
     """Set up a JURA machine with a Wi-Fi Connect dongle."""
 
@@ -87,11 +113,16 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
         self._pin = ""
         self._machine_type = ""
         self._model_name = ""
+        self._article_number: int | None = None
+        self._firmware: str | None = None
+        self._model_source = MODEL_SOURCE_MANUAL
         self._conn_id = ""
         self._auth_hash = ""
         self._pair_task: asyncio.Task[str] | None = None
         self._pair_client: JuraWifiClient | None = None
         self._pair_error = "unknown"
+        self._pair_reason = ""
+        self._identify_task: asyncio.Task[MachineIdentity | None] | None = None
 
     @staticmethod
     @callback
@@ -110,34 +141,19 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Ask for the address and the model of the machine."""
+        """Ask for the address of the dongle; the model is read from the machine."""
         if user_input is not None:
             host = user_input[CONF_HOST].strip()
             await self.async_set_unique_id(host.lower())
             self._abort_if_unique_id_configured()
             self._host = host
-            self._pin = user_input.get(CONF_PIN, "")
-            self._machine_type, _, self._model_name = user_input[CONF_MODEL].partition(
-                "|"
-            )
             self._conn_id = _new_conn_id()
             return await self.async_step_pair()
 
-        options = await self.hass.async_add_executor_job(_machine_options)
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_HOST): TextSelector(),
-                vol.Required(CONF_MODEL): SelectSelector(
-                    SelectSelectorConfig(
-                        options=options, mode=SelectSelectorMode.DROPDOWN
-                    )
-                ),
-                vol.Optional(CONF_PIN, default=""): TextSelector(
-                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
-                ),
-            }
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema({vol.Required(CONF_HOST): TextSelector()}),
         )
-        return self.async_show_form(step_id="user", data_schema=schema)
 
     async def async_step_pair(
         self, user_input: dict[str, Any] | None = None
@@ -161,21 +177,34 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
 
         task, self._pair_task = self._pair_task, None
         self._pair_client = None
+        self._pair_reason = ""
         try:
             self._auth_hash = task.result()
         except JuraWifiPairingTimeout:
             self._pair_error = "pairing_timeout"
+            self._pair_reason = "timeout"
         except JuraWifiAuthError as err:
+            _LOGGER.warning(
+                "The machine at %s refused the connection request: %s",
+                self._host,
+                err.reason,
+            )
             self._pair_error = (
                 "wrong_pin" if err.reason == "WRONG_PIN" else "pairing_rejected"
             )
-        except JuraWifiConnectionError:
+            self._pair_reason = err.reason
+        except JuraWifiConnectionError as err:
             self._pair_error = "cannot_connect"
-        except JuraWifiError:
+            self._pair_reason = str(err)
+        except JuraWifiError as err:
             _LOGGER.exception("Pairing with %s failed", self._host)
             self._pair_error = "unknown"
+            self._pair_reason = str(err)
         else:
-            return self.async_show_progress_done(next_step_id="pair_done")
+            # A re-pairing keeps the model of the existing entry.
+            return self.async_show_progress_done(
+                next_step_id="pair_done" if self.source == SOURCE_REAUTH else "identify"
+            )
         return self.async_show_progress_done(next_step_id="pair_failed")
 
     async def _async_pair(self, client: JuraWifiClient) -> str:
@@ -207,7 +236,97 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="pair_failed",
             data_schema=schema,
             errors={"base": self._pair_error},
-            description_placeholders={"host": self._host},
+            description_placeholders={
+                "host": self._host,
+                "reason": self._pair_reason or "-",
+            },
+        )
+
+    async def async_step_identify(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Read the exact model from the machine, like the J.O.E. app does."""
+        if self._identify_task is None:
+            self._identify_task = self.hass.async_create_task(self._async_identify())
+
+        if not self._identify_task.done():
+            return self.async_show_progress(
+                step_id="identify",
+                progress_action="identify",
+                progress_task=self._identify_task,
+                description_placeholders={"host": self._host},
+            )
+
+        task, self._identify_task = self._identify_task, None
+        identity = None
+        try:
+            identity = task.result()
+        except Exception:
+            _LOGGER.exception("Reading the model of %s failed", self._host)
+        if identity is not None:
+            self._article_number = identity.article_number
+            self._firmware = identity.firmware or None
+            if identity.ef_code and identity.model_name:
+                self._machine_type = identity.ef_code
+                self._model_name = identity.model_name
+                self._model_source = MODEL_SOURCE_DISCOVERY
+                return self.async_show_progress_done(next_step_id="pair_done")
+        return self.async_show_progress_done(next_step_id="article")
+
+    async def _async_identify(self) -> MachineIdentity | None:
+        return await self.hass.async_add_executor_job(discover_machine, self._host)
+
+    async def async_step_article(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask for the article number when the machine did not announce it."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            raw = user_input.get(CONF_ARTICLE_NUMBER, "").strip()
+            if not raw:
+                return await self.async_step_model()
+            resolved = await self.hass.async_add_executor_job(_resolve_article, raw)
+            if resolved is not None:
+                (
+                    self._article_number,
+                    self._model_name,
+                    self._machine_type,
+                ) = resolved
+                self._model_source = MODEL_SOURCE_ARTICLE
+                return await self.async_step_pair_done()
+            errors["base"] = "unknown_article"
+
+        return self.async_show_form(
+            step_id="article",
+            data_schema=vol.Schema(
+                {vol.Optional(CONF_ARTICLE_NUMBER, default=""): TextSelector()}
+            ),
+            errors=errors,
+        )
+
+    async def async_step_model(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Last resort: pick the model from the list of all known machines."""
+        if user_input is not None:
+            self._machine_type, _, self._model_name = user_input[CONF_MODEL].partition(
+                "|"
+            )
+            self._model_source = MODEL_SOURCE_MANUAL
+            return await self.async_step_pair_done()
+
+        options = await self.hass.async_add_executor_job(_machine_options)
+        return self.async_show_form(
+            step_id="model",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_MODEL): SelectSelector(
+                        SelectSelectorConfig(
+                            options=options, mode=SelectSelectorMode.DROPDOWN
+                        )
+                    )
+                }
+            ),
         )
 
     async def async_step_pair_done(
@@ -228,6 +347,9 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_PIN: self._pin,
                 CONF_MACHINE_TYPE: self._machine_type,
                 CONF_MODEL_NAME: self._model_name,
+                CONF_ARTICLE_NUMBER: self._article_number,
+                CONF_FIRMWARE: self._firmware,
+                CONF_MODEL_SOURCE: self._model_source,
                 **credentials,
             },
             options={

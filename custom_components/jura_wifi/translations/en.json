@@ -3,26 +3,41 @@
     "step": {
       "user": {
         "title": "Connect a JURA machine",
-        "description": "Enter the IP address of the Wi-Fi Connect dongle and pick your machine model. The next step pairs Home Assistant with the machine, so switch it on and stay in front of its display.",
+        "description": "Enter the IP address of the Wi-Fi Connect dongle. The next step pairs Home Assistant with the machine, so switch it on, wake its display and disconnect the J.O.E. app.",
         "data": {
-          "host": "IP address",
-          "model": "Machine model",
-          "pin": "PIN"
+          "host": "IP address"
         },
         "data_description": {
-          "host": "Address of the Wi-Fi Connect dongle in your network.",
-          "model": "The model name including the regional variant, e.g. \"E8 (SD)\". Type to search the list.",
-          "pin": "Only needed if a setup PIN is set on the machine. Leave empty otherwise."
+          "host": "Address of the Wi-Fi Connect dongle in your network."
         }
       },
       "pair_failed": {
         "title": "Pairing failed",
-        "description": "Pairing with {host} did not work. Make sure the machine is switched on and its display is active, then try again.",
+        "description": "Pairing with {host} did not work ({reason}). Make sure the machine is switched on, its display shows the home screen rather than a menu, and the J.O.E. app is disconnected. Then try again.",
         "data": {
           "pin": "PIN"
         },
         "data_description": {
           "pin": "The setup PIN of the machine. Leave empty if none is set."
+        }
+      },
+      "article": {
+        "title": "Which model is it?",
+        "description": "The model could not be read from the machine, usually because Home Assistant is in a different network than the dongle. Enter the article number: it is shown in the J.O.E. app next to the machine name (for example 15833) and on the type plate on the underside of the machine. Leave it empty to pick the model from a list.",
+        "data": {
+          "article_number": "Article number"
+        },
+        "data_description": {
+          "article_number": "Five digits, for example 15833."
+        }
+      },
+      "model": {
+        "title": "Pick the model",
+        "data": {
+          "model": "Machine model"
+        },
+        "data_description": {
+          "model": "The model name including the regional variant, e.g. \"E8 (SDS)\". Type to search the list."
         }
       },
       "reauth_confirm": {
@@ -38,7 +53,8 @@
       }
     },
     "progress": {
-      "pair": "Look at the display of the machine at {host} and confirm the connection request with **OK** within 60 seconds."
+      "pair": "Look at the display of the machine at {host} and confirm the connection request with **OK** within 60 seconds.",
+      "identify": "Reading the model from the machine at {host}…"
     },
     "error": {
       "cannot_connect": "The machine did not answer. Is it switched on and reachable from Home Assistant?",
@@ -46,6 +62,7 @@
       "pairing_timeout": "The connection request was not confirmed on the machine in time.",
       "pairing_rejected": "The machine refused the connection request.",
       "wrong_pin": "The machine rejected the PIN.",
+      "unknown_article": "This article number is not in the list of known JURA machines.",
       "unknown": "Unexpected error, see the Home Assistant log."
     },
     "abort": {
@@ -97,6 +114,7 @@
           "ready": "Ready"
         }
       },
+      "model": { "name": "Model" },
       "total_brews": { "name": "Total brews" },
       "product_brews": { "name": "{product} count" },
       "cleaning_need": { "name": "Cleaning need" },
