@@ -7,6 +7,31 @@ version may change behaviour.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-10
+
+### Removed
+
+- The sensor **Last seen** that 0.5.0 added. It wrote a new state at every poll: on a
+  real E8 that were 62 state changes an hour, about 1,500 a day, one per poll. It was
+  the only entity that wrote continuously (every other entity changes only when
+  something about the machine changes), and it filled the logbook and the activity
+  card of the device. The entity is removed from the entity registry when the entry is
+  set up, whether it is enabled or disabled, and nothing else is removed. A dashboard
+  card or an automation that used it has to use the attribute below.
+
+### Added
+
+- The status sensor has the attribute `last_seen` while the machine is offline: the
+  time of the last poll in which the machine answered (ISO 8601, UTC). It does not
+  change while the machine stays offline, so it only changes together with the status.
+  It is restored from the cache when Home Assistant restarts while the machine is
+  switched off. While the machine is online or busy the attribute is not there. The
+  time is still part of the diagnostics.
+- README: a note that enabling or disabling an entity (Home Assistant reloads the
+  integration about 30 seconds later, core behaviour) and saving the options reload
+  the integration, and that all entities are unavailable for a few seconds meanwhile
+  (2 to 14 s measured). The entity table describes the attribute.
+
 ## [0.5.0] - 2026-10-09
 
 ### Added
@@ -200,7 +225,8 @@ The behaviour of the integration is unchanged.
   status, problem and maintenance sensors and brew counters; opt-in brew buttons
   with the factory recipes; diagnostics; English and German translations.
 
-[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.3.0...v0.4.0

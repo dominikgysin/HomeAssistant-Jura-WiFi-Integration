@@ -1,4 +1,8 @@
-"""The counters of every product, the cache of the last values and the last seen time."""
+"""The counters of every product, the cache of the last values and the last seen time.
+
+The time the machine was last seen is no entity: while the machine is offline it is
+an attribute of the status sensor.
+"""
 
 from __future__ import annotations
 
@@ -338,6 +342,8 @@ async def test_a_damaged_cache_is_ignored(
         state(hass, "sensor", mock_config_entry, "total_brews").state == STATE_UNKNOWN
     )
     assert state(hass, "sensor", mock_config_entry, "status").state == "offline"
+    # a time that cannot be read is no time
+    assert _last_seen(hass, mock_config_entry) is None
 
 
 async def test_the_cache_is_written_after_a_delay(
@@ -381,56 +387,80 @@ async def test_the_cache_is_removed_with_the_entry(
     assert _cache_key(mock_config_entry) not in cache_storage
 
 
-async def test_last_seen_is_the_time_of_the_last_answer(
+def _last_seen(hass: HomeAssistant, entry: MockConfigEntry) -> str | None:
+    """Return the attribute last_seen of the status sensor, or None without one."""
+    return state(hass, "sensor", entry, "status").attributes.get("last_seen")
+
+
+async def test_the_status_says_when_the_machine_was_last_seen_while_it_is_off(
     hass: HomeAssistant,
     mock_client: MagicMock,
     mock_config_entry: MockConfigEntry,
     freezer,
 ) -> None:
-    """The sensor shows when the machine answered, also while it is switched off."""
+    """The time of the last poll in which the machine answered, in ISO 8601 and UTC."""
     freezer.move_to(NOW)
     await setup_entry(hass, mock_config_entry)
+    assert _last_seen(hass, mock_config_entry) is None
 
-    last_seen = state(hass, "sensor", mock_config_entry, "last_seen")
-    assert last_seen.state == NOW.isoformat()
-    assert last_seen.attributes["device_class"] == "timestamp"
-
-    # a machine that is switched off is not seen any more, but the sensor stays
     mock_client.fetch.side_effect = JuraWifiConnectionError("down")
+    # one failed poll is a collision with another client, not an offline machine
+    await poll(hass, freezer)
+    assert state(hass, "sensor", mock_config_entry, "status").state == "ready"
+    assert _last_seen(hass, mock_config_entry) is None
+
+    await poll(hass, freezer)
+    status = state(hass, "sensor", mock_config_entry, "status")
+    assert status.state == "offline"
+    # the time of the poll that was answered, not of the polls that failed since
+    assert status.attributes["last_seen"] == NOW.isoformat()
+    seen = datetime.fromisoformat(status.attributes["last_seen"])
+    assert seen == NOW
+    assert seen.utcoffset() == timedelta(0)
+    # nothing else of the status is known while the machine is off
+    for attribute in ("active_alerts", "errors", "blocked_products", "activity"):
+        assert attribute not in status.attributes
+
+    # it stays what it is for as long as the machine does not answer
     for _ in range(3):
         await poll(hass, freezer)
-    assert state(hass, "sensor", mock_config_entry, "status").state == "offline"
-    assert (
-        state(hass, "sensor", mock_config_entry, "last_seen").state == NOW.isoformat()
-    )
-
-    # a busy machine answers
-    mock_client.fetch.side_effect = JuraWifiBusy(MachineActivity("brewing", "coffee"))
-    await poll(hass, freezer)
-    seen = state(hass, "sensor", mock_config_entry, "last_seen").state
-    assert datetime.fromisoformat(seen) > NOW + timedelta(minutes=3)
+    assert _last_seen(hass, mock_config_entry) == NOW.isoformat()
 
 
-async def test_a_tolerated_failure_does_not_count_as_seen(
+async def test_the_time_is_that_of_the_last_answer_busy_or_not(
     hass: HomeAssistant,
     mock_client: MagicMock,
     mock_config_entry: MockConfigEntry,
     freezer,
 ) -> None:
-    """Only a poll that the machine answered moves the time."""
+    """A machine that answers with its progress was seen, too. The attribute goes
+    again as soon as the machine answers."""
     freezer.move_to(NOW)
     await setup_entry(hass, mock_config_entry)
 
-    mock_client.fetch.side_effect = JuraWifiConnectionError("one collision")
+    mock_client.fetch.side_effect = JuraWifiBusy(MachineActivity("brewing", "coffee"))
     await poll(hass, freezer)
+    busy = state(hass, "sensor", mock_config_entry, "status")
+    assert busy.state == "brewing"
+    assert busy.attributes["activity"] == "brewing"
+    assert "last_seen" not in busy.attributes
 
-    assert state(hass, "binary_sensor", mock_config_entry, "connectivity").state == "on"
+    mock_client.fetch.side_effect = JuraWifiConnectionError("down")
+    await poll(hass, freezer)
+    await poll(hass, freezer)
+    assert state(hass, "sensor", mock_config_entry, "status").state == "offline"
     assert (
-        state(hass, "sensor", mock_config_entry, "last_seen").state == NOW.isoformat()
+        _last_seen(hass, mock_config_entry) == (NOW + timedelta(seconds=61)).isoformat()
     )
 
+    mock_client.fetch.side_effect = None
+    await poll(hass, freezer)
+    back = state(hass, "sensor", mock_config_entry, "status")
+    assert back.state == "ready"
+    assert "last_seen" not in back.attributes
 
-async def test_last_seen_survives_a_restart(
+
+async def test_the_time_survives_a_restart_of_home_assistant(
     hass: HomeAssistant,
     mock_client: MagicMock,
     mock_config_entry: MockConfigEntry,
@@ -447,30 +477,42 @@ async def test_last_seen_survives_a_restart(
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
-    assert (
-        state(hass, "sensor", mock_config_entry, "last_seen").state == NOW.isoformat()
-    )
+    status = state(hass, "sensor", mock_config_entry, "status")
+    assert status.state == "offline"
+    assert status.attributes["last_seen"] == NOW.isoformat()
+
+    # the machine is switched on: what the cache knew is not shown any more
+    mock_client.fetch.side_effect = None
+    await poll(hass, freezer)
+    assert state(hass, "sensor", mock_config_entry, "status").state == "ready"
+    assert _last_seen(hass, mock_config_entry) is None
 
 
-async def test_last_seen_is_unknown_when_the_machine_was_never_seen(
+async def test_a_machine_that_was_never_seen_has_no_time(
     hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
 ) -> None:
     """Nothing to show before the machine answered the first time."""
     mock_client.fetch.side_effect = JuraWifiConnectionError("down")
     await setup_entry(hass, mock_config_entry)
 
-    assert state(hass, "sensor", mock_config_entry, "last_seen").state == STATE_UNKNOWN
+    status = state(hass, "sensor", mock_config_entry, "status")
+    assert status.state == "offline"
+    assert "last_seen" not in status.attributes
 
 
-async def test_last_seen_is_a_diagnostic_sensor(
-    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+async def test_the_time_is_given_in_utc_whatever_the_cache_holds(
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    mock_config_entry: MockConfigEntry,
+    cache_storage: dict,
 ) -> None:
-    """It is for the diagnostics of the device, not for the dashboard."""
+    """An offset in the stored time does not leak into the attribute."""
+    cache_storage[_cache_key(mock_config_entry)] = _cached(
+        mock_config_entry,
+        last_seen="2026-10-08T09:30:00+02:00",
+        snapshot={"total_brews": 7},
+    )
+    mock_client.fetch.side_effect = JuraWifiConnectionError("down")
     await setup_entry(hass, mock_config_entry)
 
-    entry = er.async_get(hass).async_get(
-        entity_id(hass, "sensor", mock_config_entry, "last_seen")
-    )
-    assert entry is not None
-    assert entry.entity_category is er.EntityCategory.DIAGNOSTIC
-    assert entry.disabled_by is None
+    assert _last_seen(hass, mock_config_entry) == "2026-10-08T07:30:00+00:00"

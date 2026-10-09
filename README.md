@@ -86,8 +86,7 @@ Home Assistant configuration and restart Home Assistant.
 | Entity | Notes |
 | --- | --- |
 | Model (sensor) | diagnostic; the exact model, e.g. `E8 (SDS)`. Attributes: article number, machine profile (e.g. `EF1120`), firmware if known, and how the model was found (`discovery`, `article_number` or `manual`). The device page shows the same as model, model ID, firmware and serial number. |
-| Status (sensor) | `offline`, `attention`, `rinsing`, `heating_up`, `brewing`, `maintenance`, `programming`, `busy`, `switching_off`, `energy_saving`, `ready`. The raw alerts are available as attributes; while the machine is brewing, running a maintenance program or showing its programming menu the attributes `activity` and `activity_detail` (drink or program) are set instead. |
-| Last seen (sensor) | diagnostic; the time of the last poll in which the machine answered (online or busy). It is kept over restarts, so it also tells when a machine that is switched off was last on. |
+| Status (sensor) | `offline`, `attention`, `rinsing`, `heating_up`, `brewing`, `maintenance`, `programming`, `busy`, `switching_off`, `energy_saving`, `ready`. The raw alerts are available as attributes; while the machine is brewing, running a maintenance program or showing its programming menu the attributes `activity` and `activity_detail` (drink or program) are set instead. While the machine is `offline`, the attribute `last_seen` holds the time of the last poll in which it answered (ISO 8601, UTC). It is kept over restarts of Home Assistant and does not change while the machine stays offline, so it changes only together with the status; while the machine is online or busy there is no `last_seen`. |
 | Connection (binary sensor) | diagnostic; off while the machine does not answer |
 | Problem sensors | water tank empty, grounds container full/missing, drip tray full/missing, beans empty, cleaning / descaling / filter / milk system rinse / milk system cleaning due, and the alerts that block the machine: system fill needed, tap open, front cover open, machine error |
 | Hardware state sensors | disabled by default: outlet missing, rear cover missing, water tank removal requested, ventilation closed, powder cover open. Diagnostic and disabled by default: filter detected, keys locked, remote screen active |
@@ -329,18 +328,23 @@ for the cleaning. The same works for descaling and the filter change.
   first counts down for about a quarter of an hour (the status is `switching_off`)
   before the dongle disappears.
 - Home Assistant **remembers the last counters and maintenance values** that the
-  machine reported and shows them after a restart while the machine is switched
-  off, instead of *unknown*. The machine stays the only source: nothing is
-  counted in Home Assistant, and the entities still show the machine as offline
-  (status `offline`, connection off, alerts unavailable). The values are written
-  a few minutes after a poll and when the integration is unloaded, and are
-  removed with the integration.
+  machine reported, and the time it was last seen, and shows them after a restart
+  while the machine is switched off, instead of *unknown*. The machine stays the
+  only source: nothing is counted in Home Assistant, and the entities still show
+  the machine as offline (status `offline` with its attribute `last_seen`,
+  connection off, alerts unavailable). The values are written a few minutes after
+  a poll and when the integration is unloaded, and are removed with the
+  integration.
 - Only a wrong hash or a wrong PIN, which means the dongle does not know the
   pairing any more, asks you to pair again. A machine that aborts or rejects a
   connection for another reason is treated like an unreachable machine and
   polled again.
 - The log (level info) says once when the machine becomes unreachable and once
   when it is reachable again.
+- **Enabling or disabling an entity reloads the integration.** Home Assistant does
+  that about 30 seconds after the change (core behaviour, not specific to this
+  integration), and saving the options reloads it as well. All entities of the
+  machine are `unavailable` for a few seconds meanwhile (2 to 14 s measured).
 - While the machine **brews, runs a maintenance program or shows its
   programming menu** it does not send its status, only what it is doing. The
   status then shows `brewing`, `maintenance` or `programming`, all other

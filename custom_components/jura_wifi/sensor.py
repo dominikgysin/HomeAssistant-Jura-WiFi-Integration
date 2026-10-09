@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 from jura_connect import ProductDef
@@ -15,10 +14,12 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.const import PERCENTAGE, EntityCategory, Platform
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_ARTICLE_NUMBER,
@@ -26,12 +27,19 @@ from .const import (
     CONF_MACHINE_TYPE,
     CONF_MODEL_NAME,
     CONF_MODEL_SOURCE,
+    DOMAIN,
 )
 from .coordinator import JuraWifiConfigEntry, JuraWifiCoordinator, JuraWifiData
 from .entity import JuraWifiEntity
 from .status import STATUSES, machine_status
 
 PARALLEL_UPDATES = 0
+
+# Sensors of earlier versions that do not exist any more. Their entities are removed
+# from the entity registry by their unique ID, enabled or not, and nothing else is.
+# ``last_seen`` (0.5.0) wrote a new state at every poll; the time is an attribute of
+# the status sensor now, see ``JuraWifiStatusSensor``.
+RETIRED_SENSORS = ("last_seen",)
 
 # Friendlier labels than the raw names of the machine profile.
 PRODUCT_LABELS = {
@@ -155,6 +163,24 @@ def _product_description(product: ProductDef) -> JuraWifiSensorDescription:
     )
 
 
+@callback
+def async_remove_retired_sensors(
+    hass: HomeAssistant, entry: JuraWifiConfigEntry
+) -> None:
+    """Remove the entities of the sensors that were dropped, enabled or disabled.
+
+    Only the exact unique IDs of ``RETIRED_SENSORS`` are looked up, so no other
+    entity that is registered for the entry can be removed by accident.
+    """
+    registry = er.async_get(hass)
+    for key in RETIRED_SENSORS:
+        entity_id = registry.async_get_entity_id(
+            Platform.SENSOR, DOMAIN, f"{entry.entry_id}_{key}"
+        )
+        if entity_id is not None:
+            registry.async_remove(entity_id)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: JuraWifiConfigEntry,
@@ -164,10 +190,11 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     profile = coordinator.profile
 
+    async_remove_retired_sensors(hass, entry)
+
     entities: list[SensorEntity] = [
         JuraWifiStatusSensor(coordinator, STATUS_DESCRIPTION),
         JuraWifiModelSensor(coordinator),
-        JuraWifiLastSeenSensor(coordinator),
         JuraWifiSensor(coordinator, TOTAL_BREWS_DESCRIPTION),
     ]
     # Every product gets its counter, also those that the profile does not offer as
@@ -218,31 +245,6 @@ class JuraWifiSensor(JuraWifiEntity, SensorEntity):
         return self.entity_description.value_fn(self.coordinator.data)
 
 
-class JuraWifiLastSeenSensor(JuraWifiEntity, SensorEntity):
-    """When the machine last answered a poll, also before Home Assistant restarted."""
-
-    entity_description = SensorEntityDescription(
-        key="last_seen",
-        translation_key="last_seen",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    )
-
-    def __init__(self, coordinator: JuraWifiCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator, "last_seen")
-
-    @property
-    def available(self) -> bool:
-        """The time is what is wanted while the machine is switched off."""
-        return True
-
-    @property
-    def native_value(self) -> datetime | None:
-        """Return the time of the last poll that the machine answered."""
-        return self.coordinator.last_seen
-
-
 class JuraWifiModelSensor(JuraWifiEntity, SensorEntity):
     """The exact model, as read from the machine when it was set up."""
 
@@ -287,10 +289,19 @@ class JuraWifiStatusSensor(JuraWifiSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return what the machine is doing, or else its active alerts."""
+        """Return what the machine is doing, or else its active alerts.
+
+        While the machine is offline the attribute ``last_seen`` holds the time of the
+        last poll in which it answered (ISO 8601, UTC), also from before a restart of
+        Home Assistant. That time does not move while the machine stays offline, so the
+        attribute changes together with the status and never on its own.
+        """
         data = self.coordinator.data
         if not data.online:
-            return None
+            last_seen = self.coordinator.last_seen
+            if last_seen is None:
+                return None
+            return {"last_seen": dt_util.as_utc(last_seen).isoformat()}
         if data.activity is not None:
             attributes: dict[str, Any] = {"activity": data.activity.kind}
             if data.activity.detail:

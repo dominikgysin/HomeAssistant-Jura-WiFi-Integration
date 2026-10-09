@@ -163,7 +163,6 @@
         }
       },
       "model": { "name": "Model" },
-      "last_seen": { "name": "Last seen" },
       "total_brews": { "name": "Total brews" },
       "product_brews": { "name": "{product} count" },
       "cleaning_need": { "name": "Cleaning need" },

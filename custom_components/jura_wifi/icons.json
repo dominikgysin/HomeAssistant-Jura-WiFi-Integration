@@ -23,7 +23,6 @@
         }
       },
       "model": { "default": "mdi:coffee-maker-outline" },
-      "last_seen": { "default": "mdi:clock-check-outline" },
       "total_brews": { "default": "mdi:coffee" },
       "product_brews": { "default": "mdi:coffee-outline" },
       "cleaning_need": { "default": "mdi:spray-bottle" },

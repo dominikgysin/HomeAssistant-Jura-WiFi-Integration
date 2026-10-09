@@ -240,10 +240,9 @@ def test_a_setting_without_a_translation_is_named_by_its_profile() -> None:
 
 
 def test_every_new_entity_has_a_name_in_every_language() -> None:
-    """The sensors of the machine settings and the new alerts are named."""
+    """The entities of the machine settings and the new alerts are named."""
     for language in LANGUAGES:
         entity = _load(f"translations/{language}.json")["entity"]
-        assert entity["sensor"]["last_seen"]["name"]
         assert entity["switch"]["front_panel_lock"]["name"]
         for key in (
             "system_fill_needed",
@@ -300,7 +299,6 @@ def test_the_icons_of_the_new_entities() -> None:
     icons = _load("icons.json")["entity"]
     for key in ("filter_detected", "keys_locked", "remote_screen_active"):
         assert icons["binary_sensor"][key]["default"], key
-    assert icons["sensor"]["last_seen"]["default"]
     assert icons["switch"]["front_panel_lock"]["state"]["on"]
     assert icons["number"]["setting_hardness"]["default"]
     assert {
@@ -310,6 +308,14 @@ def test_the_icons_of_the_new_entities() -> None:
         "setting_brewing_mode",
     } <= set(icons["select"])
     assert "setting_quality_assistant" in icons["switch"]
+
+
+def test_the_last_seen_sensor_left_no_name_and_no_icon_behind() -> None:
+    """The time is an attribute of the status sensor now, not an entity."""
+    for language in LANGUAGES:
+        sensors = _load(f"translations/{language}.json")["entity"]["sensor"]
+        assert "last_seen" not in sensors, language
+    assert "last_seen" not in _load("icons.json")["entity"]["sensor"]
 
 
 def test_everything_that_asks_to_pair_says_to_leave_the_settings_menu() -> None:
