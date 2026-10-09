@@ -17,6 +17,7 @@ STATUS_BREWING = "brewing"
 STATUS_MAINTENANCE = "maintenance"
 STATUS_PROGRAMMING = "programming"
 STATUS_BUSY = "busy"
+STATUS_SWITCHING_OFF = "switching_off"
 STATUS_ENERGY_SAVING = "energy_saving"
 STATUS_READY = "ready"
 
@@ -29,6 +30,7 @@ STATUSES = [
     STATUS_MAINTENANCE,
     STATUS_PROGRAMMING,
     STATUS_BUSY,
+    STATUS_SWITCHING_OFF,
     STATUS_ENERGY_SAVING,
     STATUS_READY,
 ]
@@ -39,6 +41,9 @@ TRANSIENT_ALERTS = frozenset(
     {"please_wait", "switch_off_delay_active", "program_mode_status"}
 )
 RINSING_ALERTS = frozenset({"coffee_rinsing", "system_filling", "system_emptying"})
+# The machine counts down before it switches off, for about a quarter of an hour on
+# the E8, and the dongle is gone when it is over.
+SWITCHING_OFF_ALERTS = frozenset({"switch_off_delay_active"})
 
 # What the machine is doing while it pushes progress frames; anything else it
 # reports that way is just "busy".
@@ -57,7 +62,8 @@ def machine_status(data: JuraWifiData) -> str:
     if data.activity is not None:
         return ACTIVITY_STATUSES.get(data.activity.kind, STATUS_BUSY)
     snapshot = data.snapshot
-    if snapshot is None:
+    # A snapshot from the cache has no alerts to tell the status from.
+    if snapshot is None or snapshot.restored:
         return STATUS_OFFLINE
     if snapshot.errors - TRANSIENT_ALERTS:
         return STATUS_ATTENTION
@@ -66,6 +72,8 @@ def machine_status(data: JuraWifiData) -> str:
         return STATUS_RINSING
     if "heating_up" in alerts:
         return STATUS_HEATING_UP
+    if alerts & SWITCHING_OFF_ALERTS:
+        return STATUS_SWITCHING_OFF
     if snapshot.errors & TRANSIENT_ALERTS:
         return STATUS_BUSY
     if "energy_safe" in alerts:

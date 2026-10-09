@@ -2,18 +2,34 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import MachineSnapshot
-from .const import (
-    CONF_ARTICLE_NUMBER,
-    CONF_FIRMWARE,
-    CONF_MACHINE_TYPE,
-    CONF_MODEL_NAME,
-    DOMAIN,
-)
+from .const import DOMAIN
 from .coordinator import JuraWifiCoordinator
+from .identity import device_attributes
+
+
+def async_remove_stale_entities(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    domain: str,
+    wanted: Collection[str | None],
+) -> None:
+    """Remove the entities of a platform that the options no longer ask for.
+
+    They would stay behind as unavailable entities.
+    """
+    registry = er.async_get(hass)
+    for registered in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if registered.domain == domain and registered.unique_id not in wanted:
+            registry.async_remove(registered.entity_id)
 
 
 class JuraWifiEntity(CoordinatorEntity[JuraWifiCoordinator]):
@@ -25,21 +41,30 @@ class JuraWifiEntity(CoordinatorEntity[JuraWifiCoordinator]):
         """Initialize the entity and attach it to the machine's device."""
         super().__init__(coordinator)
         entry = coordinator.config_entry
-        article = entry.data.get(CONF_ARTICLE_NUMBER)
         self._attr_unique_id = f"{entry.entry_id}_{key}"
-        self._attr_device_info = DeviceInfo(
+        info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             manufacturer="JURA",
-            model=entry.data.get(CONF_MODEL_NAME) or entry.data[CONF_MACHINE_TYPE],
-            model_id=str(article) if article else entry.data[CONF_MACHINE_TYPE],
             name=entry.title,
-            sw_version=entry.data.get(CONF_FIRMWARE) or None,
+            **device_attributes(entry.data),
         )
+        if coordinator.suggested_area:
+            info["suggested_area"] = coordinator.suggested_area
+        self._attr_device_info = info
 
     @property
     def snapshot(self) -> MachineSnapshot | None:
-        """Return the last known machine snapshot."""
+        """Return the last known machine snapshot, which may come from the cache."""
         return self.coordinator.data.snapshot
+
+    @property
+    def live_snapshot(self) -> MachineSnapshot | None:
+        """Return the last snapshot that the machine reported in this run.
+
+        What a restart restored from the cache holds the counters but no alerts.
+        """
+        snapshot = self.coordinator.data.snapshot
+        return None if snapshot is None or snapshot.restored else snapshot
 
     @property
     def online(self) -> bool:

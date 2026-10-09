@@ -38,6 +38,7 @@ from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
+from .common import registered_keys
 from .conftest import AUTH_HASH, HOST, SNAPSHOT, setup_entry
 
 
@@ -180,21 +181,35 @@ async def test_manually_chosen_model_has_no_article_number(
 
 
 async def test_entries_from_older_versions_still_load(
-    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    mock_discover: MagicMock,
+    legacy_config_entry: MockConfigEntry,
 ) -> None:
-    """Entries created before the model detection have none of the new keys."""
-    data = {
-        key: value
-        for key, value in mock_config_entry.data.items()
-        if key not in (CONF_ARTICLE_NUMBER, CONF_FIRMWARE, CONF_MODEL_SOURCE)
-    }
-    mock_config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(mock_config_entry, data=data)
-    await hass.config_entries.async_setup(mock_config_entry.entry_id)
-    await hass.async_block_till_done()
+    """Entries created by 0.1.0 have none of the keys that came later.
 
-    assert mock_config_entry.state is ConfigEntryState.LOADED
-    assert _state(hass, "sensor", mock_config_entry, "model").state == "E8 (SDS)"
+    They have no article number, firmware, serial number or source of the model, and
+    their options do not know the maintenance buttons or the machine settings.
+    """
+    mock_discover.return_value = None  # the dongle cannot be reached by UDP
+    await setup_entry(hass, legacy_config_entry)
+
+    assert legacy_config_entry.state is ConfigEntryState.LOADED
+    state = _state(hass, "sensor", legacy_config_entry, "model")
+    assert state.state == "E8 (SDS)"
+    assert state.attributes == {
+        "machine_type": "EF1120",
+        "friendly_name": "JURA E8 (SDS) Model",
+    }
+    device = _device(hass, legacy_config_entry)
+    assert device.model_id == "EF1120"
+    assert device.sw_version is None
+    assert device.serial_number is None
+    # Nothing of the options that came later is switched on by an update.
+    assert not _button_keys(hass, legacy_config_entry)
+    assert registered_keys(hass, legacy_config_entry, "number") == set()
+    assert registered_keys(hass, legacy_config_entry, "select") == set()
+    assert registered_keys(hass, legacy_config_entry, "switch") == set()
 
 
 async def test_diagnostic_sensors_are_disabled_by_default(

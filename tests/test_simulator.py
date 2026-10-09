@@ -15,8 +15,10 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.jura_wifi import api
 from custom_components.jura_wifi.api import (
+    JuraWifiAuthError,
     JuraWifiBusy,
     JuraWifiClient,
+    JuraWifiConnectionError,
     JuraWifiError,
     MachineActivity,
 )
@@ -25,12 +27,16 @@ from custom_components.jura_wifi.const import (
     CONF_CONN_ID,
     CONF_ENABLE_BREWING,
     CONF_ENABLE_MAINTENANCE,
+    CONF_ENABLE_SETTINGS,
     DOMAIN,
+    SERVICE_BREW,
 )
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
+from .common import E8_SETTINGS, call, entity_id, state
 from .conftest import E8_STORED_RECIPES, P_MODE_FRAME
 
 CONN_ID = "ha-simulated"
@@ -372,3 +378,295 @@ async def test_the_integration_controls_the_simulated_machine(
     )
 
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+# The machine settings, the lock of the front panel and brewing with parameters,
+# as they reach the machine. The real machine has not been asked any of this yet.
+
+
+def test_the_settings_are_read_in_the_session_of_the_poll(
+    machine: Callable[..., Simulator],
+) -> None:
+    """All six settings of the E8 come with the counters, in one session."""
+    simulator = machine(settings=dict(E8_SETTINGS))
+    client = _paired(simulator)
+    _commands(simulator)
+
+    snapshot = client.fetch(with_settings=True)
+
+    assert snapshot.settings == E8_SETTINGS
+    reads = [command for command in _commands(simulator) if command[:4] == "@TM:"]
+    assert reads == ["@TM:02", "@TM:13", "@TM:08", "@TM:09", "@TM:65", "@TM:7E"]
+
+
+def test_a_poll_does_not_read_the_settings_unless_asked(
+    machine: Callable[..., Simulator],
+) -> None:
+    """Settings rarely change; the usual poll leaves them alone."""
+    simulator = machine(settings=dict(E8_SETTINGS))
+    client = _paired(simulator)
+    _commands(simulator)
+
+    snapshot = client.fetch()
+
+    assert snapshot.settings is None
+    assert not [c for c in _commands(simulator) if c[:4] == "@TM:"]
+
+
+def test_a_setting_is_written_with_its_checksum_and_read_back(
+    machine: Callable[..., Simulator],
+) -> None:
+    """Lock, write, release, check: the hardness goes from 16 to 12."""
+    simulator = machine(settings=dict(E8_SETTINGS))
+    client = _paired(simulator)
+    _commands(simulator)
+
+    assert client.write_setting("02", "0C") == "0C"
+
+    commands = _commands(simulator)
+    assert commands[:3] == ["@TS:01", "@TM:02,0CFE", "@TS:00"]
+    assert set(commands[3:]) == {"@TM:02"}
+    assert simulator.config.settings["02"] == "0C"
+    assert simulator.config.screen_locked is False
+
+
+def test_the_switch_off_time_is_written_with_its_marker_bytes(
+    machine: Callable[..., Simulator],
+) -> None:
+    """One hour is 213C on the wire."""
+    simulator = machine(settings=dict(E8_SETTINGS))
+    client = _paired(simulator)
+    _commands(simulator)
+
+    client.write_setting("13", "213C")
+
+    assert _commands(simulator)[1] == "@TM:13,213C96"
+    assert simulator.config.settings["13"] == "213C"
+
+
+def test_the_front_panel_is_locked_and_released(
+    machine: Callable[..., Simulator],
+) -> None:
+    """The commands of the Remote Screen and Release Keys banks."""
+    simulator = machine()
+    client = _paired(simulator)
+    _commands(simulator)
+
+    client.set_front_panel_lock(True)
+    assert _commands(simulator) == ["@TS:01"]
+    assert simulator.config.screen_locked is True
+
+    client.set_front_panel_lock(False)
+    assert _commands(simulator) == ["@TS:00"]
+    assert simulator.config.screen_locked is False
+
+
+@pytest.mark.parametrize(
+    ("product", "options", "read", "sent"),
+    [
+        # the foam time of the cappuccino, 20 s as stored, becomes 25 s
+        (
+            "cappuccino",
+            {"milk_foam": 25},
+            "@TM:41,04",
+            "@TP:0400080C001901000100000000000000",
+        ),
+        # strength 3, 100 ml and the high temperature replace what is stored
+        (
+            "cappuccino",
+            {"ml": 100, "temperature": "high", "strength": 3},
+            "@TM:41,04",
+            "@TP:04000314001402000100000000000000",
+        ),
+        # foam 30 s and a break of 10 s instead of 33 s and 20 s
+        (
+            "latte_macchiato",
+            {"milk_foam": 30, "milk_break": 10},
+            "@TM:41,07",
+            "@TP:07000809001E020001000A0000000000",
+        ),
+    ],
+)
+def test_brewing_with_options_changes_only_those_parameters(
+    machine: Callable[..., Simulator],
+    product: str,
+    options: dict[str, int | str],
+    read: str,
+    sent: str,
+) -> None:
+    """Everything that is not given stays as stored on the machine."""
+    simulator = machine(allow_brew=True, pmode_products=dict(STORED))
+    client = _paired(simulator)
+    _commands(simulator)
+
+    client.brew(product, options)
+
+    assert _commands(simulator) == [read, sent]
+
+
+def test_a_dongle_that_aborts_the_handshake_is_no_pairing_problem(
+    machine: Callable[..., Simulator],
+) -> None:
+    """The machine says no, for a reason of its own; the credentials are fine."""
+    simulator = machine()
+    _paired(simulator)
+    host, port = _address(simulator)
+    # the dongle holds a hash for this identifier, and the client asks as if it were new
+    asking_as_new = JuraWifiClient(host, port, CONN_ID, "", "", "EF1120")
+
+    with pytest.raises(JuraWifiConnectionError, match="ABORTED") as err:
+        asking_as_new.fetch()
+
+    assert not isinstance(err.value, JuraWifiAuthError)
+
+
+def test_wrong_credentials_are_an_auth_failure(
+    machine: Callable[..., Simulator],
+) -> None:
+    """A wrong hash and a wrong PIN are what pairing again can repair."""
+    simulator = machine(pin="1234")
+    host, port = _address(simulator)
+    auth_hash = JuraWifiClient(host, port, CONN_ID, "", "1234", "EF1120").pair()
+
+    with pytest.raises(JuraWifiAuthError, match="WRONG_HASH"):
+        JuraWifiClient(host, port, CONN_ID, "AB" * 32, "1234", "EF1120").fetch()
+    with pytest.raises(JuraWifiAuthError, match="WRONG_PIN"):
+        JuraWifiClient(host, port, CONN_ID, auth_hash, "9999", "EF1120").fetch()
+    JuraWifiClient(host, port, CONN_ID, auth_hash, "1234", "EF1120").fetch()
+
+
+async def _entry_for(
+    hass: HomeAssistant,
+    simulator: Simulator,
+    template: MockConfigEntry,
+    *,
+    auth_hash: str | None = None,
+    **options: bool,
+) -> MockConfigEntry:
+    """Add an entry for a simulated machine; by default it is paired."""
+    host, port = _address(simulator)
+    if auth_hash is None:
+        auth_hash = await hass.async_add_executor_job(_client(simulator).pair)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title=template.title,
+        unique_id=host,
+        data={
+            **template.data,
+            CONF_HOST: host,
+            CONF_PORT: port,
+            CONF_CONN_ID: CONN_ID,
+            CONF_AUTH_HASH: auth_hash,
+        },
+        options={**template.options, **options},
+    )
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    return entry
+
+
+async def test_the_integration_changes_the_settings_of_the_simulated_machine(
+    hass: HomeAssistant,
+    machine: Callable[..., Simulator],
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Read the settings, change one of each kind, lock the panel and brew."""
+    simulator = machine(
+        settings=dict(E8_SETTINGS), allow_brew=True, pmode_products=dict(STORED)
+    )
+    entry = await _entry_for(
+        hass,
+        simulator,
+        mock_config_entry,
+        **{CONF_ENABLE_SETTINGS: True, CONF_ENABLE_BREWING: True},
+    )
+    assert entry.state is ConfigEntryState.LOADED
+    assert float(state(hass, "number", entry, "setting_hardness").state) == 16
+    assert state(hass, "select", entry, "setting_auto_off").state == "30min"
+    assert state(hass, "select", entry, "setting_language").state == "english"
+    assert state(hass, "switch", entry, "setting_quality_assistant").state == "on"
+    assert state(hass, "switch", entry, "front_panel_lock").state == "off"
+    _commands(simulator)
+
+    await call(
+        hass,
+        "number",
+        "set_value",
+        entity_id(hass, "number", entry, "setting_hardness"),
+        value=12,
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert simulator.config.settings["02"] == "0C"
+    assert float(state(hass, "number", entry, "setting_hardness").state) == 12
+
+    await call(
+        hass,
+        "select",
+        "select_option",
+        entity_id(hass, "select", entry, "setting_auto_off"),
+        option="1h",
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert simulator.config.settings["13"] == "213C"
+    assert state(hass, "select", entry, "setting_auto_off").state == "1h"
+
+    await call(
+        hass,
+        "switch",
+        "turn_off",
+        entity_id(hass, "switch", entry, "setting_quality_assistant"),
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert simulator.config.settings["7E"] == "00"
+    assert state(hass, "switch", entry, "setting_quality_assistant").state == "off"
+
+    await call(
+        hass, "switch", "turn_on", entity_id(hass, "switch", entry, "front_panel_lock")
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert simulator.config.screen_locked is True
+
+    await call(
+        hass,
+        DOMAIN,
+        SERVICE_BREW,
+        entity_id(hass, "button", entry, "brew_cappuccino"),
+        milk_foam_time=25,
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert "@TP:0400080C001901000100000000000000" in _commands(simulator)
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_dongle_that_aborts_the_session_leaves_the_entry_alone(
+    hass: HomeAssistant,
+    machine: Callable[..., Simulator],
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """The entry stays set up and offline; no pairing is asked for."""
+    simulator = machine()
+    _paired(simulator)
+    entry = await _entry_for(hass, simulator, mock_config_entry, auth_hash="")
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert state(hass, "sensor", entry, "status").state == "offline"
+    assert not hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_dongle_that_rejects_the_credentials_asks_for_pairing(
+    hass: HomeAssistant,
+    machine: Callable[..., Simulator],
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A wrong hash is what the pairing repairs."""
+    simulator = machine()
+    _paired(simulator)
+    entry = await _entry_for(hass, simulator, mock_config_entry, auth_hash="AB" * 32)
+
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [flow["context"]["source"] for flow in flows] == ["reauth"]

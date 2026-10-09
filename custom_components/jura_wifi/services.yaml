@@ -1,0 +1,62 @@
+brew:
+  target:
+    entity:
+      integration: jura_wifi
+      domain: button
+  fields:
+    strength:
+      required: false
+      example: 7
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    water_amount:
+      required: false
+      example: 90
+      selector:
+        number:
+          min: 5
+          max: 255
+          step: 5
+          unit_of_measurement: ml
+          mode: box
+    temperature:
+      required: false
+      example: high
+      selector:
+        select:
+          options:
+            - low
+            - normal
+            - high
+          translation_key: brew_temperature
+    milk_foam_time:
+      required: false
+      example: 20
+      selector:
+        number:
+          min: 1
+          max: 255
+          unit_of_measurement: s
+          mode: box
+    milk_break:
+      required: false
+      example: 10
+      selector:
+        number:
+          min: 0
+          max: 255
+          unit_of_measurement: s
+          mode: box
+    bypass:
+      required: false
+      example: 40
+      selector:
+        number:
+          min: 0
+          max: 255
+          step: 5
+          unit_of_measurement: ml
+          mode: box

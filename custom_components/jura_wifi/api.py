@@ -9,11 +9,14 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Iterator, Mapping
 import contextlib
 import dataclasses
+import importlib.resources
 import ipaddress
 import logging
 import socket
 import threading
 import time
+from typing import Any
+import xml.etree.ElementTree as ET
 
 import ifaddr
 from jura_connect import (
@@ -53,6 +56,12 @@ HANDSHAKE_TIMEOUT = 15.0
 READ_TIMEOUT = 10.0
 PAIRING_TIMEOUT = 60.0
 RECIPE_TIMEOUT = 3.0
+SETTING_TIMEOUT = 3.0
+
+# The only handshake states that say the stored credentials are no good. Any other
+# refusal (the machine aborted the connection, rejected it with a code) is not about
+# the credentials and may be gone at the next try, like an unreachable machine.
+AUTH_FAILURE_STATES = frozenset({"WRONG_HASH", "WRONG_PIN"})
 
 # The maintenance percent bank reports 0xFF for indicators a machine lacks.
 PERCENT_NOT_REPORTED = 0xFF
@@ -77,6 +86,28 @@ BREW_ARGUMENT_BY_KIND = {
     KIND_MILK_BREAK: "milk_break",
     KIND_BYPASS: "bypass",
 }
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class BrewOption:
+    """A recipe parameter that the brew action lets the caller change."""
+
+    key: str  # the field of the action
+    kind: str  # the recipe parameter of the machine profile
+    argument: str  # the keyword of ``JuraClient.brew``
+    named: bool = False  # the value is the name of an item, not a number
+
+
+# What the action offers is what the E8 recipes use. The milk amount of the milk
+# coffee drinks of other machines and the grinder parameters are left out.
+BREW_OPTIONS: tuple[BrewOption, ...] = (
+    BrewOption("strength", KIND_COFFEE_STRENGTH, "strength"),
+    BrewOption("water_amount", KIND_WATER_AMOUNT, "ml"),
+    BrewOption("temperature", KIND_TEMPERATURE, "temperature", named=True),
+    BrewOption("milk_foam_time", KIND_MILK_FOAM_AMOUNT, "milk_foam"),
+    BrewOption("milk_break", KIND_MILK_BREAK, "milk_break"),
+    BrewOption("bypass", KIND_BYPASS, "bypass"),
+)
 
 ACTIVITY_BREWING = "brewing"
 ACTIVITY_MAINTENANCE = "maintenance"
@@ -136,9 +167,29 @@ class JuraWifiPairingTimeout(JuraWifiError):
     """The connect prompt on the machine was not confirmed in time."""
 
 
+class BrewOptionError(ValueError):
+    """A value for the brew action does not fit the drink.
+
+    ``translation_key`` names the message under ``exceptions`` in the translations
+    and ``placeholders`` fill it.
+    """
+
+    def __init__(self, translation_key: str, **placeholders: str) -> None:
+        """Initialize with the message to show and what goes into it."""
+        super().__init__(translation_key)
+        self.translation_key = translation_key
+        self.placeholders = placeholders
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class MachineSnapshot:
-    """Result of one successful poll."""
+    """Result of one successful poll, or what the cache restored after a restart.
+
+    ``restored`` marks a snapshot that was loaded from the cache: only the counters
+    and the maintenance values are known then, the alerts are not. ``settings``
+    holds the raw values of the machine settings that this poll read, or ``None``
+    if it did not read them.
+    """
 
     active_alerts: frozenset[str]
     errors: frozenset[str]
@@ -147,6 +198,8 @@ class MachineSnapshot:
     maintenance_percent: Mapping[str, int]
     total_brews: int | None
     product_counts: Mapping[str, int]
+    settings: Mapping[str, str] | None = None
+    restored: bool = False
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -155,13 +208,15 @@ class MachineIdentity:
 
     ``ef_code`` and ``model_name`` are ``None`` when the article number is not
     in the catalogue of the J.O.E. app that ships with the library, or when the
-    library has no profile for that machine type.
+    library has no profile for that machine type. ``serial_number`` is ``None``
+    when the reply holds none.
     """
 
     article_number: int
     firmware: str
     ef_code: str | None
     model_name: str | None
+    serial_number: int | None = None
 
 
 def _broadcast_targets(host_ip: str) -> list[str]:
@@ -223,7 +278,17 @@ def discover_machine(
         firmware=machine.fw,
         ef_code=entry.ef_code if entry is not None and known else None,
         model_name=entry.friendly_name if entry is not None and known else None,
+        serial_number=_usable_serial(machine.serial_number),
     )
+
+
+def _usable_serial(serial: int) -> int | None:
+    """Return the serial number of a discovery reply, or ``None`` if it holds none.
+
+    The field has 16 bits. A machine that was never given a serial number leaves it
+    erased, which reads as all zeros or all ones.
+    """
+    return serial if 0 < serial < 0xFFFF else None
 
 
 def describe_activity(
@@ -293,6 +358,130 @@ def recipe_from_stored(definition: ProductDef, stored: str) -> dict[str, int]:
         if value is not None:
             arguments[keyword] = value
     return arguments
+
+
+def brew_arguments(
+    definition: ProductDef, options: Mapping[str, Any]
+) -> dict[str, int | str]:
+    """Check the options of the brew action against the profile of the drink.
+
+    Returns the arguments for ``JuraClient.brew``. Only the parameters that the
+    profile defines for the drink are accepted, and only within the range, the step
+    or the items that it declares. Raises :class:`BrewOptionError` for anything else.
+    """
+    arguments: dict[str, int | str] = {}
+    for option in BREW_OPTIONS:
+        if option.key not in options:
+            continue
+        param = definition.param(option.kind)
+        if param is None or (option.named and not param.items):
+            raise BrewOptionError("brew_option_unsupported", option=option.key)
+        arguments[option.argument] = _checked_brew_value(
+            option, param, options[option.key]
+        )
+    return arguments
+
+
+def _checked_brew_value(
+    option: BrewOption, param: ProductParam, value: Any
+) -> int | str:
+    """Return ``value`` if the parameter accepts it, else raise."""
+    if option.named:
+        names = [item.name for item in param.items]
+        name = str(value).strip().lower()
+        if name not in names:
+            raise BrewOptionError(
+                "brew_option_choice", option=option.key, allowed=", ".join(names)
+            )
+        return name
+    number = int(value)
+    if param.items:
+        # The levels (coffee strength) are numbers that the profile lists as items.
+        allowed = sorted(int(item.value, 16) for item in param.items)
+        if number not in allowed:
+            raise BrewOptionError(
+                "brew_option_choice",
+                option=option.key,
+                allowed=", ".join(str(level) for level in allowed),
+            )
+        return number
+    minimum = 0 if param.minimum is None else param.minimum
+    maximum = 0xFF if param.maximum is None else param.maximum
+    if not minimum <= number <= maximum:
+        raise BrewOptionError(
+            "brew_option_range",
+            option=option.key,
+            minimum=str(minimum),
+            maximum=str(maximum),
+        )
+    step = param.step or 1
+    if step > 1 and (number - minimum) % step:
+        raise BrewOptionError(
+            "brew_option_step",
+            option=option.key,
+            minimum=str(minimum),
+            step=str(step),
+        )
+    return number
+
+
+# The maintenance processes that the profile gives a threshold for, with the field of
+# the percent bank that tells how far the machine is.
+PREDICTIVE_FIELDS = {
+    "Cleaning": "cleaning",
+    "Decalc": "descale",
+    "FilterChange": "filter_change",
+}
+LOCK_COMMANDS = frozenset({"@TS:01", "@TS:00"})
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ProfileExtras:
+    """What the XML of a machine declares and the library does not expose.
+
+    ``front_panel_lock`` says that the machine declares the commands to lock and
+    release its front panel (the banks ``Remote Screen`` and ``Release Keys``).
+    ``predictive_thresholds`` maps the field of a maintenance percent to the percent
+    at which the J.O.E. app recommends the maintenance.
+    """
+
+    front_panel_lock: bool = False
+    predictive_thresholds: Mapping[str, int] = dataclasses.field(default_factory=dict)
+
+
+def load_profile_extras(profile: MachineProfile) -> ProfileExtras:
+    """Read the declarations of the machine XML that the profile does not carry.
+
+    Blocking: the XML ships with the library and is read from disk. A machine whose
+    XML cannot be read simply has none of them.
+    """
+    try:
+        text = (
+            importlib.resources.files("jura_connect")
+            .joinpath("data", "xml", profile.code, f"{profile.version}.xml")
+            .read_text(encoding="utf-8")
+        )
+        root = ET.fromstring(text)
+    except (OSError, ValueError, ET.ParseError) as err:
+        _LOGGER.debug("Could not read the XML of %s: %s", profile.code, err)
+        return ProfileExtras()
+    commands = {
+        (bank.get("Command") or "").strip().upper()
+        for bank in root.findall(".//{*}STATISTIC/{*}BANK")
+    }
+    thresholds: dict[str, int] = {}
+    for button in root.findall(".//{*}PREDICTIVEMAINTENANCE/{*}PREDICTIVEBUTTON"):
+        field = PREDICTIVE_FIELDS.get(button.get("Process") or button.get("Name") or "")
+        try:
+            threshold = int(button.get("Threshold") or "")
+        except ValueError:
+            continue
+        if field is not None:
+            thresholds[field] = threshold
+    return ProfileExtras(
+        front_panel_lock=commands >= LOCK_COMMANDS,
+        predictive_thresholds=thresholds,
+    )
 
 
 class _SessionGate:
@@ -392,9 +581,14 @@ class JuraWifiClient:
         except HandshakeError as err:
             client.close()
             raise JuraWifiConnectionError(f"unexpected handshake reply: {err}") from err
-        if result.state != "CORRECT":
+        if result.state in AUTH_FAILURE_STATES:
             client.close()
             raise JuraWifiAuthError(result.state)
+        if result.state != "CORRECT":
+            client.close()
+            raise JuraWifiConnectionError(
+                f"the machine refused the connection ({result.state})"
+            )
         return client
 
     def check(self) -> None:
@@ -452,8 +646,11 @@ class JuraWifiClient:
         if client is not None:
             client.conn.close()
 
-    def fetch(self) -> MachineSnapshot:
+    def fetch(self, with_settings: bool = False) -> MachineSnapshot:
         """Read status, maintenance data and brew counters in one session.
+
+        With ``with_settings`` the machine settings of the profile are read in the
+        same session, so that no second session (and pause) is needed for them.
 
         Raises :class:`JuraWifiBusy` when the machine answers but pushes progress
         frames instead of a status frame.
@@ -466,6 +663,7 @@ class JuraWifiClient:
                     products = client.read_product_counters()
                 except ValueError:
                     products = None
+                settings = self._read_settings(client) if with_settings else None
             except TimeoutError as err:
                 activity = describe_activity(client.status_history, self.profile)
                 if activity is not None:
@@ -491,7 +689,80 @@ class JuraWifiClient:
             },
             total_brews=products.total if products is not None else None,
             product_counts=dict(products.by_name) if products is not None else {},
+            settings=settings,
         )
+
+    def _read_settings(self, client: JuraClient) -> dict[str, str]:
+        """Read the raw value of every setting that the profile declares.
+
+        A setting that cannot be read is left out and the others are still read.
+        The reading stops where the machine does not answer or the connection breaks,
+        so that a machine that ignores the requests does not hold up the poll.
+        """
+        values: dict[str, str] = {}
+        for definition in self.profile.settings:
+            try:
+                raw = client.read_setting(
+                    definition.p_argument, timeout=SETTING_TIMEOUT
+                )
+            except ValueError as err:
+                _LOGGER.debug("Setting %s could not be read: %s", definition.name, err)
+                continue
+            except OSError as err:
+                _LOGGER.debug("Stopped reading the settings: %s", err)
+                break
+            # The library hands out what it got when the answer is too short to hold
+            # a value, which is what a machine without that setting sends.
+            if raw:
+                values[definition.p_argument.upper()] = raw.upper()
+        return values
+
+    def write_setting(self, p_argument: str, value: str) -> str:
+        """Write one machine setting and return the value the machine reports for it.
+
+        ``value`` is the value of the setting in the wire format of the machine. The
+        library locks the front panel for the write, checks the checksum of the
+        request and reads the setting back; it raises if the machine did not store
+        the value.
+        """
+        with self._gate.session():
+            client = self._open()
+            try:
+                reply = client.write_setting(p_argument, value, timeout=SETTING_TIMEOUT)
+                try:
+                    stored = client.read_setting(p_argument, timeout=SETTING_TIMEOUT)
+                except (ValueError, OSError):
+                    stored = ""
+            except TimeoutError as err:
+                raise JuraWifiError(
+                    "the machine did not answer the setting request"
+                ) from err
+            except OSError as err:
+                raise JuraWifiConnectionError(str(err) or type(err).__name__) from err
+            except Exception as err:
+                raise JuraWifiError(str(err)) from err
+            finally:
+                client.close()
+        if reply.strip().lower().startswith("@an:error"):
+            raise JuraWifiError(f"machine refused the setting ({reply!r})")
+        return (stored or value).upper()
+
+    def set_front_panel_lock(self, locked: bool) -> None:
+        """Lock the front panel of the machine, or release it again."""
+        with self._gate.session():
+            client = self._open()
+            try:
+                reply = client.lock_screen() if locked else client.unlock_screen()
+            except TimeoutError as err:
+                raise JuraWifiError(
+                    "the machine did not answer the lock request"
+                ) from err
+            except OSError as err:
+                raise JuraWifiConnectionError(str(err) or type(err).__name__) from err
+            finally:
+                client.close()
+        if reply.strip().lower().startswith("@an:error"):
+            raise JuraWifiError(f"machine refused the request ({reply!r})")
 
     def _stored_recipe(self, client: JuraClient, product: str) -> dict[str, int]:
         """Read the recipe the machine has stored for a drink, as ``brew`` arguments.
@@ -516,16 +787,20 @@ class JuraWifiClient:
         _LOGGER.debug("Recipe of %s stored on the machine: %s", product, arguments)
         return arguments
 
-    def brew(self, product: str) -> None:
+    def brew(
+        self, product: str, options: Mapping[str, int | str] | None = None
+    ) -> None:
         """Start a drink with the recipe that is stored on the machine.
 
+        ``options`` are arguments for ``JuraClient.brew`` that replace the matching
+        parameters of the stored recipe; everything else stays as the machine has it.
         Falls back to the factory recipe of the profile if the machine does not
         hand its recipes out.
         """
         with self._gate.session():
             client = self._open()
             try:
-                arguments = self._stored_recipe(client, product)
+                arguments = {**self._stored_recipe(client, product), **(options or {})}
                 reply = client.brew(product, retry=True, **arguments)
             except TimeoutError as err:
                 raise JuraWifiError(

@@ -1,5 +1,10 @@
 {
   "entity": {
+    "binary_sensor": {
+      "filter_detected": { "default": "mdi:filter-outline" },
+      "keys_locked": { "default": "mdi:lock-outline" },
+      "remote_screen_active": { "default": "mdi:monitor" }
+    },
     "sensor": {
       "status": {
         "default": "mdi:coffee-maker",
@@ -12,11 +17,13 @@
           "maintenance": "mdi:wrench",
           "programming": "mdi:cog",
           "busy": "mdi:timer-sand",
+          "switching_off": "mdi:power",
           "energy_saving": "mdi:leaf",
           "ready": "mdi:coffee-maker"
         }
       },
       "model": { "default": "mdi:coffee-maker-outline" },
+      "last_seen": { "default": "mdi:clock-check-outline" },
       "total_brews": { "default": "mdi:coffee" },
       "product_brews": { "default": "mdi:coffee-outline" },
       "cleaning_need": { "default": "mdi:spray-bottle" },
@@ -38,6 +45,31 @@
       "start_cappu_rinse": { "default": "mdi:water-sync" },
       "start_cappu_clean": { "default": "mdi:spray-bottle" },
       "start_coffee_rinse": { "default": "mdi:water-sync" }
+    },
+    "number": {
+      "setting_hardness": { "default": "mdi:water-opacity" },
+      "setting_other": { "default": "mdi:cog-outline" }
+    },
+    "select": {
+      "setting_hardness": { "default": "mdi:water-opacity" },
+      "setting_auto_off": { "default": "mdi:timer-off-outline" },
+      "setting_units": { "default": "mdi:ruler" },
+      "setting_language": { "default": "mdi:translate" },
+      "setting_brewing_mode": { "default": "mdi:coffee-maker-outline" },
+      "setting_other": { "default": "mdi:cog-outline" }
+    },
+    "switch": {
+      "setting_quality_assistant": { "default": "mdi:shield-check-outline" },
+      "setting_other": { "default": "mdi:cog-outline" },
+      "front_panel_lock": {
+        "default": "mdi:lock-open-variant-outline",
+        "state": {
+          "on": "mdi:lock-outline"
+        }
+      }
     }
+  },
+  "services": {
+    "brew": { "service": "mdi:coffee-maker" }
   }
 }

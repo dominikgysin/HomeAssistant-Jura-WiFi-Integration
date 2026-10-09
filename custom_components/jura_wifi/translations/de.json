@@ -40,15 +40,37 @@
           "model": "Modellname inklusive Länderausführung, z. B. \"E8 (SDS)\". Tippe, um die Liste zu durchsuchen."
         }
       },
+      "options": {
+        "title": "Bereich und Optionen",
+        "description": "Wo steht die Maschine, und was soll Home Assistant anbieten? Alles ausser dem Bereich kannst du später über *Konfigurieren* an der Integration ändern.",
+        "data": {
+          "area": "Bereich",
+          "scan_interval": "Aktualisierungsintervall",
+          "enable_brewing": "Zubereitungs-Schaltflächen",
+          "enable_maintenance": "Pflegeprogramm-Schaltflächen",
+          "enable_settings": "Maschineneinstellungen"
+        },
+        "data_description": {
+          "area": "Optional. Das Gerät der Maschine wird in diesem Bereich angelegt, damit alle Entitäten den Namen des Bereichs tragen. Das geschieht einmalig; um die Maschine später zu verschieben, ändere den Bereich des Geräts.",
+          "scan_interval": "Sekunden zwischen zwei Abfragen. Der Stick akzeptiert nur eine Verbindung gleichzeitig, daher nicht zu niedrig wählen.",
+          "enable_brewing": "Fügt pro Getränk eine Schaltfläche hinzu, die es mit dem auf der Maschine gespeicherten Rezept zubereitet, so wie am Display eingestellt. Vor dem Drücken eine Tasse unterstellen. Fügt auch eine Abbrechen-Schaltfläche hinzu und schaltet die Aktion Mit Optionen zubereiten frei.",
+          "enable_maintenance": "Fügt Schaltflächen hinzu, die die Pflegeprogramme der Maschine starten (Reinigung, Entkalkung, Milchsystem spülen, Kaffeesystem spülen, ...). Die Bestätigungen fragt die Maschine danach auf ihrem Display ab; das Kaffeesystem wird sofort gespült, also eine Tasse unter den Auslauf stellen. Fügt auch eine Abbrechen-Schaltfläche hinzu.",
+          "enable_settings": "Fügt Entitäten für die Einstellungen der Maschine hinzu (Wasserhärte, Ausschaltzeit, Sprache, ...) und einen Schalter, der das Bedienfeld sperrt. Die Werte werden von der Maschine gelesen und auf sie geschrieben; eine Änderung braucht eine eingeschaltete, untätige Maschine."
+        }
+      },
       "reauth_confirm": {
         "title": "Erneut koppeln",
         "description": "Die Maschine unter {host} akzeptiert die gespeicherten Zugangsdaten nicht mehr. Schalte sie ein, **verlasse das Einstellungsmenü** (das Display muss den Startbildschirm zeigen) und schliesse die J.O.E.-App. Bestätige nach dem Absenden die Verbindungsanfrage auf dem Display."
       },
       "reconfigure": {
         "title": "Adresse ändern",
-        "description": "Gib die neue IP-Adresse des Wi-Fi-Connect-Sticks ein.",
+        "description": "Gib die neue IP-Adresse des Wi-Fi-Connect-Sticks ein.\n\nKann Home Assistant das Modell nicht von der Maschine lesen, weil es in einem anderen Netz als der Stick ist, ergänze die Artikelnummer: Du findest sie in der J.O.E.-App neben dem Maschinennamen und auf dem Typenschild. Sie muss zum eingerichteten Modell gehören.",
         "data": {
-          "host": "IP-Adresse"
+          "host": "IP-Adresse",
+          "article_number": "Artikelnummer"
+        },
+        "data_description": {
+          "article_number": "Optional, fünf Ziffern. Leer lassen, um den gespeicherten Wert zu behalten."
         }
       }
     },
@@ -65,6 +87,7 @@
       "machine_busy": "Die Maschine ist beschäftigt (Zubereitung oder Pflegeprogramm). Warte, bis sie fertig ist, und versuche es erneut.",
       "wrong_pin": "Die Maschine hat die PIN abgelehnt.",
       "unknown_article": "Diese Artikelnummer ist nicht in der Liste der bekannten JURA-Maschinen.",
+      "article_other_model": "Diese Artikelnummer gehört zu einem anderen Maschinentyp als dem eingerichteten. Um das Modell zu ändern, entferne die Integration und richte sie neu ein.",
       "unknown": "Unerwarteter Fehler, siehe Home-Assistant-Log."
     },
     "abort": {
@@ -80,12 +103,14 @@
         "data": {
           "scan_interval": "Aktualisierungsintervall",
           "enable_brewing": "Zubereitungs-Schaltflächen",
-          "enable_maintenance": "Pflegeprogramm-Schaltflächen"
+          "enable_maintenance": "Pflegeprogramm-Schaltflächen",
+          "enable_settings": "Maschineneinstellungen"
         },
         "data_description": {
           "scan_interval": "Sekunden zwischen zwei Abfragen. Der Stick akzeptiert nur eine Verbindung gleichzeitig, daher nicht zu niedrig wählen.",
-          "enable_brewing": "Fügt pro Getränk eine Schaltfläche hinzu, die es mit dem auf der Maschine gespeicherten Rezept zubereitet, so wie am Display eingestellt. Vor dem Drücken eine Tasse unterstellen. Fügt auch eine Abbrechen-Schaltfläche hinzu.",
-          "enable_maintenance": "Fügt Schaltflächen hinzu, die die Pflegeprogramme der Maschine starten (Reinigung, Entkalkung, Milchsystem spülen, Kaffeesystem spülen, ...). Die Bestätigungen fragt die Maschine danach auf ihrem Display ab; das Kaffeesystem wird sofort gespült, also eine Tasse unter den Auslauf stellen. Fügt auch eine Abbrechen-Schaltfläche hinzu."
+          "enable_brewing": "Fügt pro Getränk eine Schaltfläche hinzu, die es mit dem auf der Maschine gespeicherten Rezept zubereitet, so wie am Display eingestellt. Vor dem Drücken eine Tasse unterstellen. Fügt auch eine Abbrechen-Schaltfläche hinzu und schaltet die Aktion Mit Optionen zubereiten frei.",
+          "enable_maintenance": "Fügt Schaltflächen hinzu, die die Pflegeprogramme der Maschine starten (Reinigung, Entkalkung, Milchsystem spülen, Kaffeesystem spülen, ...). Die Bestätigungen fragt die Maschine danach auf ihrem Display ab; das Kaffeesystem wird sofort gespült, also eine Tasse unter den Auslauf stellen. Fügt auch eine Abbrechen-Schaltfläche hinzu.",
+          "enable_settings": "Fügt Entitäten für die Einstellungen der Maschine hinzu (Wasserhärte, Ausschaltzeit, Sprache, ...) und einen Schalter, der das Bedienfeld sperrt. Die Werte werden von der Maschine gelesen und auf sie geschrieben; eine Änderung braucht eine eingeschaltete, untätige Maschine."
         }
       }
     }
@@ -103,7 +128,22 @@
       "descaling_due": { "name": "Entkalkung fällig" },
       "filter_change_due": { "name": "Filterwechsel fällig" },
       "milk_rinse_due": { "name": "Milchsystem-Spülung fällig" },
-      "milk_clean_due": { "name": "Milchsystem-Reinigung fällig" }
+      "milk_clean_due": { "name": "Milchsystem-Reinigung fällig" },
+      "system_fill_needed": { "name": "System füllen nötig" },
+      "tap_open": { "name": "Hahn offen" },
+      "front_cover_open": { "name": "Frontabdeckung offen" },
+      "machine_error": { "name": "Maschinenfehler" },
+      "outlet_missing": { "name": "Auslauf fehlt" },
+      "rear_cover_missing": { "name": "Rückabdeckung fehlt" },
+      "water_tank_removal_requested": { "name": "Wassertank-Entnahme verlangt" },
+      "ventilation_closed": { "name": "Lüftung geschlossen" },
+      "powder_cover_open": { "name": "Pulverschacht offen" },
+      "filter_detected": { "name": "Filter erkannt" },
+      "keys_locked": { "name": "Tasten gesperrt" },
+      "remote_screen_active": { "name": "Fernanzeige aktiv" },
+      "cleaning_recommended": { "name": "Reinigung empfohlen" },
+      "descaling_recommended": { "name": "Entkalkung empfohlen" },
+      "filter_change_recommended": { "name": "Filterwechsel empfohlen" }
     },
     "sensor": {
       "status": {
@@ -117,11 +157,13 @@
           "maintenance": "Pflegeprogramm",
           "programming": "Programmiermodus",
           "busy": "Beschäftigt",
+          "switching_off": "Schaltet ab",
           "energy_saving": "Energiesparmodus",
           "ready": "Bereit"
         }
       },
       "model": { "name": "Modell" },
+      "last_seen": { "name": "Zuletzt gesehen" },
       "total_brews": { "name": "Zubereitungen gesamt" },
       "product_brews": { "name": "Anzahl {product}" },
       "cleaning_need": { "name": "Reinigungsbedarf" },
@@ -143,6 +185,138 @@
       "start_cappu_rinse": { "name": "Milchsystem spülen" },
       "start_cappu_clean": { "name": "Milchsystem reinigen" },
       "start_coffee_rinse": { "name": "Kaffeesystem spülen" }
+    },
+    "number": {
+      "setting_hardness": { "name": "Wasserhärte" },
+      "setting_other": { "name": "{setting}" }
+    },
+    "select": {
+      "setting_hardness": {
+        "name": "Wasserhärte",
+        "state": {
+          "step_1": "Stufe 1",
+          "step_2": "Stufe 2",
+          "step_3": "Stufe 3",
+          "step_4": "Stufe 4"
+        }
+      },
+      "setting_auto_off": {
+        "name": "Ausschaltzeit",
+        "state": {
+          "15min": "15 Minuten",
+          "30min": "30 Minuten",
+          "1h": "1 Stunde",
+          "2h": "2 Stunden",
+          "3h": "3 Stunden",
+          "4h": "4 Stunden",
+          "5h": "5 Stunden",
+          "6h": "6 Stunden",
+          "7h": "7 Stunden",
+          "8h": "8 Stunden",
+          "9h": "9 Stunden"
+        }
+      },
+      "setting_units": {
+        "name": "Einheiten",
+        "state": {
+          "ml": "Milliliter",
+          "oz": "Unzen"
+        }
+      },
+      "setting_language": {
+        "name": "Sprache",
+        "state": {
+          "german": "Deutsch",
+          "english": "Englisch",
+          "french": "Französisch",
+          "italian": "Italienisch",
+          "dutch": "Niederländisch",
+          "spanish": "Spanisch",
+          "portuguese": "Portugiesisch",
+          "swedish": "Schwedisch",
+          "russian": "Russisch",
+          "polish": "Polnisch",
+          "esti": "Estnisch",
+          "bulgarian": "Bulgarisch",
+          "chinese": "Chinesisch",
+          "czech": "Tschechisch",
+          "danish": "Dänisch",
+          "finnish": "Finnisch",
+          "hebrew": "Hebräisch",
+          "hollandisch": "Niederländisch",
+          "hungarian": "Ungarisch",
+          "japanese": "Japanisch",
+          "korean": "Koreanisch",
+          "latvian": "Lettisch",
+          "lithuanian": "Litauisch",
+          "norwegian": "Norwegisch",
+          "romanian": "Rumänisch",
+          "slovenian": "Slowenisch",
+          "thai": "Thailändisch",
+          "turkish": "Türkisch"
+        }
+      },
+      "setting_brewing_mode": {
+        "name": "Zubereitungsmodus",
+        "state": {
+          "ask": "Jedes Mal fragen",
+          "classic": "Klassisch",
+          "light": "Light",
+          "sweet": "Süss",
+          "cold": "Kalt",
+          "profile1": "Profil 1",
+          "profile2": "Profil 2",
+          "profile3": "Profil 3",
+          "profile4": "Profil 4"
+        }
+      },
+      "setting_other": { "name": "{setting}" }
+    },
+    "switch": {
+      "setting_quality_assistant": { "name": "Qualitätsassistent" },
+      "setting_other": { "name": "{setting}" },
+      "front_panel_lock": { "name": "Bedienfeld sperren" }
+    }
+  },
+  "selector": {
+    "brew_temperature": {
+      "options": {
+        "low": "Niedrig",
+        "normal": "Normal",
+        "high": "Hoch"
+      }
+    }
+  },
+  "services": {
+    "brew": {
+      "name": "Mit Optionen zubereiten",
+      "description": "Bereitet das Getränk einer Zubereitungs-Schaltfläche zu und ändert dabei einzelne Parameter seines Rezepts, nur für dieses Getränk. Was nicht angegeben wird, bleibt wie auf der Maschine gespeichert. Vorher eine Tasse unterstellen.",
+      "fields": {
+        "strength": {
+          "name": "Stärke",
+          "description": "Kaffeestärke als Stufe, die die Maschine für das Getränk anbietet."
+        },
+        "water_amount": {
+          "name": "Wassermenge",
+          "description": "Wassermenge in Millilitern, im Bereich, den das Getränk erlaubt."
+        },
+        "temperature": {
+          "name": "Temperatur",
+          "description": "Brühtemperatur."
+        },
+        "milk_foam_time": {
+          "name": "Milchschaumzeit",
+          "description": "Sekunden, die Milchschaum ausgegeben wird."
+        },
+        "milk_break": {
+          "name": "Milchpause",
+          "description": "Sekunden Pause zwischen Milch und Kaffee."
+        },
+        "bypass": {
+          "name": "Bypass",
+          "description": "Milliliter Wasser, die am Kaffee vorbeilaufen, wie beim Americano."
+        }
+      }
     }
   },
   "exceptions": {
@@ -172,6 +346,27 @@
     },
     "cancel_failed": {
       "message": "Die aktuelle Aktion konnte nicht abgebrochen werden: {error}"
+    },
+    "setting_failed": {
+      "message": "{setting} konnte nicht geändert werden: {error}"
+    },
+    "lock_failed": {
+      "message": "Das Bedienfeld konnte nicht gesperrt oder freigegeben werden: {error}"
+    },
+    "not_a_brew_button": {
+      "message": "Diese Aktion funktioniert nur bei den Zubereitungs-Schaltflächen."
+    },
+    "brew_option_unsupported": {
+      "message": "{product} hat kein {option}, das sich einstellen lässt."
+    },
+    "brew_option_range": {
+      "message": "{option} muss für {product} zwischen {minimum} und {maximum} liegen."
+    },
+    "brew_option_step": {
+      "message": "{option} muss für {product} {minimum} plus ein Vielfaches von {step} sein."
+    },
+    "brew_option_choice": {
+      "message": "{option} muss für {product} einer dieser Werte sein: {allowed}."
     }
   }
 }

@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import dataclasses
 import socket
 import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from jura_connect import Machine, PairingTimeout, list_profile_codes, load_profile
+from jura_connect import (
+    Machine,
+    PairingTimeout,
+    iter_profiles,
+    list_profile_codes,
+    load_profile,
+)
 from jura_connect.client import (
     HandshakeResult,
     MachineInfo,
@@ -23,6 +30,7 @@ import pytest
 
 from custom_components.jura_wifi import api
 from custom_components.jura_wifi.api import (
+    BrewOptionError,
     JuraWifiAuthError,
     JuraWifiBusy,
     JuraWifiClient,
@@ -31,8 +39,11 @@ from custom_components.jura_wifi.api import (
     JuraWifiPairingTimeout,
     MachineActivity,
     MachineIdentity,
+    ProfileExtras,
+    brew_arguments,
     describe_activity,
     discover_machine,
+    load_profile_extras,
     recipe_from_stored,
 )
 
@@ -224,14 +235,41 @@ def test_unexpected_reply(fake: MagicMock) -> None:
     assert not isinstance(err.value, JuraWifiConnectionError)
 
 
-@pytest.mark.parametrize("state", ["WRONG_HASH", "WRONG_PIN", "ABORTED"])
+@pytest.mark.parametrize("state", ["WRONG_HASH", "WRONG_PIN"])
 def test_rejected_credentials(fake: MagicMock, state: str) -> None:
-    """A handshake other than CORRECT is an authentication error."""
+    """A wrong hash or PIN is the only thing that is an authentication error."""
     fake.connect.return_value = HandshakeResult("@hp5", state, None)
     with pytest.raises(JuraWifiAuthError) as err:
         _client().fetch()
     assert err.value.reason == state
     fake.close.assert_called_once()
+
+
+@pytest.mark.parametrize("state", ["ABORTED", "REJECTED:07", "REJECTED:FF"])
+def test_a_refusal_that_is_no_credential_problem_is_transient(
+    fake: MagicMock, state: str
+) -> None:
+    """The machine aborting or rejecting with a code is not about the credentials.
+
+    Home Assistant stops polling after an authentication error until the machine is
+    paired again, so these count as an unreachable machine, which is tried again.
+    """
+    fake.connect.return_value = HandshakeResult("@hp5", state, None)
+    with pytest.raises(JuraWifiConnectionError, match=state) as err:
+        _client().fetch()
+    assert not isinstance(err.value, JuraWifiAuthError)
+    fake.close.assert_called_once()
+
+
+@pytest.mark.parametrize("state", ["ABORTED", "REJECTED:07", "WRONG_HASH"])
+def test_the_check_of_the_address_tells_a_refusal_from_bad_credentials(
+    fake: MagicMock, state: str
+) -> None:
+    """The reconfiguration shows 'invalid credentials' only for the credentials."""
+    fake.connect.return_value = HandshakeResult("@hp5", state, None)
+    expected = JuraWifiAuthError if state == "WRONG_HASH" else JuraWifiConnectionError
+    with pytest.raises(expected):
+        _client().check()
 
 
 def test_pair_returns_new_hash(fake: MagicMock) -> None:
@@ -738,6 +776,7 @@ def test_discovery_reads_the_identity_from_the_broadcast_reply(
         firmware="TT237W V06.11",
         ef_code="EF1120",
         model_name="E8 (SDS)",
+        serial_number=2,
     )
     assert udp.discover.call_args.kwargs["targets"] == ["255.255.255.255"]
 
@@ -768,7 +807,11 @@ def test_discovery_with_an_article_the_catalogue_does_not_know(
     """The article number and firmware are still reported."""
     udp.probe.return_value = _machine(article=19999)
     assert discover_machine("192.0.2.10") == MachineIdentity(
-        article_number=19999, firmware="TT237W V06.11", ef_code=None, model_name=None
+        article_number=19999,
+        firmware="TT237W V06.11",
+        ef_code=None,
+        model_name=None,
+        serial_number=2,
     )
 
 
@@ -796,6 +839,362 @@ def test_discovery_with_an_unresolvable_host(udp: SimpleNamespace) -> None:
     with patch.object(api.socket, "gethostbyname", side_effect=socket.gaierror):
         assert discover_machine("no-such-host.invalid") is None
     udp.probe.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("serial", "expected"),
+    [(2, 2), (4711, 4711), (0xFFFE, 0xFFFE), (0, None), (0xFFFF, None)],
+)
+def test_a_serial_number_that_the_reply_does_not_hold_is_left_out(
+    udp: SimpleNamespace, serial: int, expected: int | None
+) -> None:
+    """An erased field of the 16 bit serial number reads as all zeros or all ones."""
+    udp.probe.return_value = dataclasses.replace(_machine(), serial_number=serial)
+    identity = discover_machine("192.0.2.10")
+    assert identity is not None
+    assert identity.serial_number == expected
+
+
+E8_SETTING_VALUES = {
+    "02": "10",
+    "13": "1E",
+    "08": "00",
+    "09": "02",
+    "65": "00",
+    "7E": "01",
+}
+
+
+def test_fetch_reads_the_settings_in_the_same_session(fake: MagicMock) -> None:
+    """The settings need no session of their own, so no pause for the dongle."""
+    fake.read_setting.side_effect = lambda arg, **_: E8_SETTING_VALUES[arg]
+
+    snapshot = _client().fetch(with_settings=True)
+
+    assert snapshot.settings == E8_SETTING_VALUES
+    assert [call.args[0] for call in fake.read_setting.call_args_list] == [
+        "02",
+        "13",
+        "08",
+        "09",
+        "65",
+        "7E",
+    ]
+    assert fake.connect.call_count == 1
+    fake.close.assert_called_once()
+
+
+def test_fetch_leaves_the_settings_alone_unless_asked(fake: MagicMock) -> None:
+    """Settings rarely change, so a plain poll does not read them."""
+    snapshot = _client().fetch()
+    assert snapshot.settings is None
+    fake.read_setting.assert_not_called()
+
+
+def test_a_setting_that_cannot_be_read_is_left_out(fake: MagicMock) -> None:
+    """One setting that fails does not cost the others."""
+
+    def read(arg: str, **_) -> str:
+        if arg == "09":
+            raise ValueError("checksum mismatch")
+        if arg == "65":
+            return ""  # what a machine without that setting answers
+        return E8_SETTING_VALUES[arg]
+
+    fake.read_setting.side_effect = read
+
+    snapshot = _client().fetch(with_settings=True)
+
+    assert snapshot.settings == {"02": "10", "13": "1E", "08": "00", "7E": "01"}
+
+
+def test_the_settings_are_not_read_on_when_the_machine_stops_answering(
+    fake: MagicMock,
+) -> None:
+    """A machine that ignores the requests does not hold up the poll."""
+    asked: list[str] = []
+
+    def read(arg: str, **_) -> str:
+        asked.append(arg)
+        if arg == "13":
+            raise TimeoutError("no reply to '@TM:13'")
+        return E8_SETTING_VALUES[arg]
+
+    fake.read_setting.side_effect = read
+
+    snapshot = _client().fetch(with_settings=True)
+
+    assert asked == ["02", "13"]
+    assert snapshot.settings == {"02": "10"}
+    assert snapshot.total_brews == 20
+
+
+def test_a_connection_lost_while_reading_the_settings_keeps_the_poll(
+    fake: MagicMock,
+) -> None:
+    """Status and counters were read already; they are not thrown away."""
+    fake.read_setting.side_effect = ConnectionResetError("reset by peer")
+
+    snapshot = _client().fetch(with_settings=True)
+
+    assert snapshot.settings == {}
+    assert snapshot.total_brews == 20
+    fake.close.assert_called_once()
+
+
+def test_write_setting(fake: MagicMock) -> None:
+    """The library writes with its checksum and checks the value; then it is read."""
+    fake.write_setting.return_value = "@tm:02"
+    fake.read_setting.return_value = "0F"
+
+    assert _client().write_setting("02", "0F") == "0F"
+
+    fake.write_setting.assert_called_once_with("02", "0F", timeout=api.SETTING_TIMEOUT)
+    fake.close.assert_called_once()
+
+
+def test_write_setting_returns_what_the_machine_stores(fake: MagicMock) -> None:
+    """The switch-off time is written as 213C and read back as 3C."""
+    fake.write_setting.return_value = "@tm:13"
+    fake.read_setting.return_value = "3c"
+    assert _client().write_setting("13", "213C") == "3C"
+
+
+def test_write_setting_without_a_readback_returns_the_written_value(
+    fake: MagicMock,
+) -> None:
+    """The write is verified by the library; a failing second read is no failure."""
+    fake.write_setting.return_value = "@tm:13"
+    fake.read_setting.side_effect = ValueError("checksum mismatch")
+    assert _client().write_setting("13", "213c") == "213C"
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        (ValueError("dongle ACK'd but read-back is '10'"), JuraWifiError),
+        (TimeoutError("no reply to '@TM:02,0F00'"), JuraWifiError),
+        (ConnectionResetError("reset by peer"), JuraWifiConnectionError),
+    ],
+)
+def test_write_setting_failures(
+    fake: MagicMock, failure: Exception, expected: type[Exception]
+) -> None:
+    """A value the machine did not store is a failed command, a lost session an outage."""
+    fake.write_setting.side_effect = failure
+    with pytest.raises(expected) as err:
+        _client().write_setting("02", "0F")
+    if expected is JuraWifiError:
+        assert not isinstance(err.value, JuraWifiConnectionError)
+    fake.close.assert_called_once()
+
+
+def test_a_setting_the_machine_refuses_is_reported(fake: MagicMock) -> None:
+    """The library returns the refusal of the machine instead of raising."""
+    fake.write_setting.return_value = "@an:error"
+    with pytest.raises(JuraWifiError, match="refused"):
+        _client().write_setting("02", "0F")
+
+
+@pytest.mark.parametrize(
+    ("locked", "method"), [(True, "lock_screen"), (False, "unlock_screen")]
+)
+def test_set_front_panel_lock(fake: MagicMock, locked: bool, method: str) -> None:
+    """The lock and the release are two commands of the library."""
+    getattr(fake, method).return_value = "@ts"
+
+    _client().set_front_panel_lock(locked)
+
+    getattr(fake, method).assert_called_once_with()
+    fake.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        (TimeoutError("no reply to '@TS:01'"), JuraWifiError),
+        (ConnectionResetError("reset by peer"), JuraWifiConnectionError),
+    ],
+)
+def test_front_panel_lock_failures(
+    fake: MagicMock, failure: Exception, expected: type[Exception]
+) -> None:
+    """Silence is a failed command, a lost session an outage."""
+    fake.lock_screen.side_effect = failure
+    with pytest.raises(expected) as err:
+        _client().set_front_panel_lock(True)
+    if expected is JuraWifiError:
+        assert not isinstance(err.value, JuraWifiConnectionError)
+    fake.close.assert_called_once()
+
+
+def test_a_refused_front_panel_lock_is_reported(fake: MagicMock) -> None:
+    """An @an:error reply means that the machine did not lock."""
+    fake.lock_screen.return_value = "@an:error"
+    with pytest.raises(JuraWifiError, match="refused"):
+        _client().set_front_panel_lock(True)
+
+
+def test_brew_options_replace_the_stored_recipe(fake: MagicMock) -> None:
+    """Only what is given changes; the rest is what the machine has stored."""
+    fake.read_pmode_product.return_value = _stored(
+        "espresso", E8_STORED_RECIPES["espresso"]
+    )
+
+    _client().brew("espresso", {"ml": 60, "temperature": "high"})
+
+    fake.brew.assert_called_once_with(
+        "espresso", retry=True, strength=8, ml=60, temperature="high"
+    )
+
+
+def test_brew_options_without_a_stored_recipe_leave_the_rest_to_the_profile(
+    fake: MagicMock,
+) -> None:
+    """A machine that keeps its recipes to itself gets the factory recipe."""
+    _client().brew("espresso", {"ml": 60})
+    fake.brew.assert_called_once_with("espresso", retry=True, ml=60)
+
+
+def _product(name: str):
+    return next(p for p in load_profile("EF1120").products if p.name == name)
+
+
+def test_every_option_of_the_brew_action_has_its_argument() -> None:
+    """The actions options are exactly the six that were asked for."""
+    assert {option.key: option.argument for option in api.BREW_OPTIONS} == {
+        "strength": "strength",
+        "water_amount": "ml",
+        "temperature": "temperature",
+        "milk_foam_time": "milk_foam",
+        "milk_break": "milk_break",
+        "bypass": "bypass",
+    }
+
+
+def test_the_options_of_a_drink_become_brew_arguments() -> None:
+    """Names are case-insensitive and the keys are those of ``JuraClient.brew``."""
+    arguments = brew_arguments(
+        _product("americano"),
+        {"strength": 6, "water_amount": 70, "temperature": "High", "bypass": 45},
+    )
+    assert arguments == {"strength": 6, "ml": 70, "temperature": "high", "bypass": 45}
+
+
+def test_the_milk_options_of_a_milk_drink() -> None:
+    """The latte macchiato defines foam time and milk break."""
+    arguments = brew_arguments(
+        _product("latte_macchiato"), {"milk_foam_time": 30, "milk_break": 0}
+    )
+    assert arguments == {"milk_foam": 30, "milk_break": 0}
+
+
+def test_no_options_make_no_arguments() -> None:
+    """Whatever is not given stays as the machine has it."""
+    assert brew_arguments(_product("espresso"), {}) == {}
+
+
+@pytest.mark.parametrize(
+    ("product", "option"),
+    [
+        ("espresso", "bypass"),
+        ("espresso", "milk_foam_time"),
+        ("coffee", "milk_break"),
+        ("milk_foam", "strength"),
+        ("hotwater_portion_normal", "strength"),
+        ("cappuccino", "bypass"),
+    ],
+)
+def test_an_option_the_profile_does_not_define_for_the_drink_is_refused(
+    product: str, option: str
+) -> None:
+    """The profile decides which parameters a drink has."""
+    with pytest.raises(BrewOptionError) as err:
+        brew_arguments(_product(product), {option: 1})
+    assert err.value.translation_key == "brew_option_unsupported"
+    assert err.value.placeholders == {"option": option}
+
+
+@pytest.mark.parametrize(
+    ("product", "option", "value", "key", "placeholders"),
+    [
+        # espresso: 15 to 80 ml in steps of 5
+        ("espresso", "water_amount", 10, "brew_option_range", {"minimum": "15"}),
+        ("espresso", "water_amount", 85, "brew_option_range", {"maximum": "80"}),
+        ("espresso", "water_amount", 17, "brew_option_step", {"step": "5"}),
+        # latte macchiato: milk break of 0 to 60 s, milk foam of 1 to 45 s
+        ("latte_macchiato", "milk_break", 61, "brew_option_range", {"maximum": "60"}),
+        ("latte_macchiato", "milk_foam_time", 0, "brew_option_range", {"minimum": "1"}),
+        # americano: bypass in steps of 5 ml
+        ("americano", "bypass", 42, "brew_option_step", {"step": "5", "minimum": "0"}),
+        # the strength is one of the ten levels, the temperature one of three names
+        ("espresso", "strength", 11, "brew_option_choice", {"allowed": "1, 2"}),
+        ("espresso", "strength", 0, "brew_option_choice", {}),
+        ("espresso", "temperature", "boiling", "brew_option_choice", {}),
+    ],
+)
+def test_a_value_that_does_not_fit_the_drink_is_refused(
+    product: str,
+    option: str,
+    value: int | str,
+    key: str,
+    placeholders: dict[str, str],
+) -> None:
+    """The range, the step and the items come from the profile of the drink."""
+    with pytest.raises(BrewOptionError) as err:
+        brew_arguments(_product(product), {option: value})
+    assert err.value.translation_key == key
+    assert err.value.placeholders["option"] == option
+    for name, expected in placeholders.items():
+        assert expected in err.value.placeholders[name]
+
+
+def test_the_choices_are_named_in_the_refusal() -> None:
+    """The message lists what is allowed."""
+    with pytest.raises(BrewOptionError) as err:
+        brew_arguments(_product("espresso"), {"temperature": "boiling"})
+    assert err.value.placeholders["allowed"] == "low, normal, high"
+    with pytest.raises(BrewOptionError) as err:
+        brew_arguments(_product("espresso"), {"strength": 11})
+    assert err.value.placeholders["allowed"] == "1, 2, 3, 4, 5, 6, 7, 8, 9, 10"
+
+
+def test_the_limits_of_a_drink_are_accepted() -> None:
+    """The ends of the range are part of it."""
+    espresso = _product("espresso")
+    assert brew_arguments(espresso, {"water_amount": 15})["ml"] == 15
+    assert brew_arguments(espresso, {"water_amount": 80})["ml"] == 80
+    assert brew_arguments(espresso, {"strength": 1})["strength"] == 1
+    assert brew_arguments(espresso, {"strength": 10})["strength"] == 10
+
+
+def test_the_profile_extras_of_the_e8() -> None:
+    """The E8 declares the lock banks and the predictive maintenance at 80 percent."""
+    extras = load_profile_extras(load_profile("EF1120"))
+    assert extras.front_panel_lock is True
+    assert extras.predictive_thresholds == {
+        "cleaning": 80,
+        "descale": 80,
+        "filter_change": 80,
+    }
+
+
+def test_the_profile_extras_of_a_machine_without_predictive_maintenance() -> None:
+    """Thresholds are only there where the profile gives them."""
+    profile = next(
+        profile
+        for profile in iter_profiles()
+        if not load_profile_extras(profile).predictive_thresholds
+    )
+    extras = load_profile_extras(profile)
+    assert extras.predictive_thresholds == {}
+    assert extras.front_panel_lock is True
+
+
+def test_the_profile_extras_survive_an_xml_that_cannot_be_read() -> None:
+    """The extras are an addition; the machine works without them."""
+    profile = dataclasses.replace(load_profile("EF1120"), version="0.0")
+    assert load_profile_extras(profile) == ProfileExtras()
 
 
 def test_broadcast_targets_cover_every_local_network() -> None:

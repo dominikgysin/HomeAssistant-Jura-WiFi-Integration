@@ -7,6 +7,93 @@ version may change behaviour.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-09
+
+### Added
+
+- **Machine settings** (option *Machine settings*, off by default, also asked in the
+  setup). The settings that the machine profile declares become entities in the
+  configuration section of the device. On the E8 these are the water hardness
+  (number), the switch-off time, the units, the language and the brewing mode
+  (selects) and the quality assistant (switch). The values are read from the machine
+  at the first poll, every ten minutes and after each change, and written with the
+  checksummed setting write of the library. A change needs the machine to be on and
+  idle, and the value is read back from the machine. A machine that knows steps
+  instead of 1 to 30 for the water hardness (ENA 4, E4, D4) gets a select for it, and
+  a setting without a translation is named the way its profile names it.
+- **Front panel lock** (switch, same option): locks the keys and the display of the
+  machine with the lock and release commands of the J.O.E. app (`@TS:01`, `@TS:00`).
+  The state follows the alerts `LockedKeys` and `RemoteScreen`. Only machines whose
+  profile declares both commands get it.
+- **Action `jura_wifi.brew`** (needs the brew buttons): brews the drink of a brew
+  button with single parameters of its recipe changed for this drink only (strength,
+  water amount, temperature, milk foam time, milk break, bypass). Only the parameters
+  that the profile defines for the drink are accepted, within its range, step or
+  items; anything else is refused with a translated message. What is not given stays
+  as stored on the machine. The same guards as for the buttons apply: the machine has
+  to be online and idle and the drink must not be blocked.
+- The setup asks for the **area** (optional), the update interval, the brew buttons,
+  the maintenance buttons and the machine settings before it creates the entry. The
+  area is applied when the device is created, so that all of its entities get the
+  same entity ID prefix, and is never applied again, so a later change of the area
+  stays.
+- Sensor **Last seen** (diagnostic): the time of the last poll that the machine
+  answered. It survives a restart of Home Assistant.
+- The values that the machine reported last (counters and maintenance values) are
+  kept and shown after a restart of Home Assistant while the machine is switched off,
+  instead of `unknown`. The entities still show the machine as offline, and nothing
+  is counted by the integration: the machine stays the only source of every value.
+- More binary sensors, for the alerts that the profile declares: system fill needed,
+  tap open, front cover open and machine error (the alerts that block the machine);
+  outlet missing, rear cover missing, water tank removal requested, ventilation
+  closed, powder cover open, filter detected, keys locked and remote screen active
+  (disabled by default). Plus *Cleaning*, *Descaling* and *Filter change recommended*,
+  which turn on when the maintenance percent reaches the threshold that the profile
+  declares (80 on the E8), like the J.O.E. app recommends it.
+- Status **switching off**. The E8 counts down for about a quarter of an hour before
+  it switches off and the status showed `busy` meanwhile (alert
+  `switch_off_delay_active`).
+- The reconfiguration offers an optional article number, for a machine whose dongle
+  cannot be reached by UDP. It has to belong to the model that is set up: the machine
+  type is never changed.
+- Diagnostics: the state of the coordinator (last update, interval, failures in a
+  row, online or offline since), the versions of the integration and of the library,
+  the profile code and the settings read from the machine. The address, the
+  credentials and now the serial number stay redacted.
+- The serial number of the machine, as the discovery reports it, is shown on the
+  device.
+
+### Changed
+
+- The poll interval is 15 seconds while the machine reports an activity (brewing, a
+  maintenance program, its menu), and the configured interval otherwise. `brewing`
+  and `maintenance` used to linger up to about 80 seconds after the drink was done.
+  The pause of 10 seconds between two sessions with the dongle still applies.
+- A config entry is identified by the serial number of the machine instead of the
+  address of the dongle when the serial number is known. Entries of earlier versions
+  get it when the machine answers the discovery. Device identifiers and entity IDs are
+  unchanged, so nothing is lost on an update.
+- Entries created by 0.1.0 to 0.4.1 get the article number, the firmware, the serial
+  number and the source of the model from the discovery when it works, in the
+  background once the machine answers. The device then shows the firmware and the
+  article number as model ID. The machine type is never changed.
+- Home Assistant logs at INFO, once per change, when the machine becomes unreachable
+  and when it is reachable again. It used to be only visible at DEBUG.
+- *Filter wear* is unavailable instead of unknown when the machine does not report
+  the indicator, as the E8 does without a filter.
+
+### Fixed
+
+- A machine that refused a connection with a state other than a wrong credential or
+  PIN (`ABORTED`, `REJECTED:<code>`) was treated like rejected credentials: Home
+  Assistant stopped polling until the machine was paired again. Only `WRONG_HASH`
+  and `WRONG_PIN` count as rejected credentials now; any other refusal is handled like
+  an unreachable machine.
+- The brew counters missed the products that the profile does not offer as a drink
+  but that the machine counts: 2x Espresso, 2x Coffee and the powder product on the
+  E8 (disabled by default). The counters of the drinks added up to less than the
+  total.
+
 ## [0.4.1] - 2026-10-09
 
 ### Added
@@ -113,7 +200,8 @@ The behaviour of the integration is unchanged.
   status, problem and maintenance sensors and brew counters; opt-in brew buttons
   with the factory recipes; diagnostics; English and German translations.
 
-[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.2.1...v0.3.0

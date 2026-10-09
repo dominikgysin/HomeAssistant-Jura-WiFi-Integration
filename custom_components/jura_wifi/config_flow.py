@@ -17,6 +17,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import (
     SOURCE_REAUTH,
+    ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlowWithReload,
@@ -24,6 +25,7 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
+    AreaSelector,
     BooleanSelector,
     NumberSelector,
     NumberSelectorConfig,
@@ -49,11 +51,13 @@ from .api import (
     discover_machine,
 )
 from .const import (
+    CONF_AREA,
     CONF_ARTICLE_NUMBER,
     CONF_AUTH_HASH,
     CONF_CONN_ID,
     CONF_ENABLE_BREWING,
     CONF_ENABLE_MAINTENANCE,
+    CONF_ENABLE_SETTINGS,
     CONF_FIRMWARE,
     CONF_MACHINE_TYPE,
     CONF_MODEL,
@@ -61,6 +65,7 @@ from .const import (
     CONF_MODEL_SOURCE,
     CONF_PIN,
     CONF_SCAN_INTERVAL,
+    CONF_SERIAL_NUMBER,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -78,6 +83,34 @@ _LOGGER = logging.getLogger(__name__)
 def _new_conn_id() -> str:
     """Return the identifier under which this installation pairs."""
     return f"homeassistant-{uuid.uuid4().hex[:8]}"
+
+
+def _option_fields() -> dict[Any, Any]:
+    """Return the form fields of the options, as asked at the setup and later."""
+    return {
+        vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): NumberSelector(
+            NumberSelectorConfig(
+                min=MIN_SCAN_INTERVAL,
+                max=MAX_SCAN_INTERVAL,
+                step=5,
+                unit_of_measurement="s",
+                mode=NumberSelectorMode.BOX,
+            )
+        ),
+        vol.Required(CONF_ENABLE_BREWING, default=False): BooleanSelector(),
+        vol.Required(CONF_ENABLE_MAINTENANCE, default=False): BooleanSelector(),
+        vol.Required(CONF_ENABLE_SETTINGS, default=False): BooleanSelector(),
+    }
+
+
+def _options_from_input(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Return the options that a submitted form holds."""
+    return {
+        CONF_SCAN_INTERVAL: int(user_input[CONF_SCAN_INTERVAL]),
+        CONF_ENABLE_BREWING: user_input[CONF_ENABLE_BREWING],
+        CONF_ENABLE_MAINTENANCE: user_input[CONF_ENABLE_MAINTENANCE],
+        CONF_ENABLE_SETTINGS: user_input[CONF_ENABLE_SETTINGS],
+    }
 
 
 def _machine_options() -> list[SelectOptionDict]:
@@ -118,6 +151,7 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
         self._model_name = ""
         self._article_number: int | None = None
         self._firmware: str | None = None
+        self._serial_number: int | None = None
         self._model_source = MODEL_SOURCE_MANUAL
         self._conn_id = ""
         self._auth_hash = ""
@@ -141,12 +175,28 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
         if self._pair_client is not None:
             self._pair_client.cancel()
 
+    def _host_in_use(self, host: str, exclude: ConfigEntry | None = None) -> bool:
+        """Say whether another entry talks to the dongle at this address.
+
+        Entries are identified by the serial number of the machine, not by the
+        address, so the address has to be compared separately.
+        """
+        return any(
+            str(entry.data.get(CONF_HOST, "")).lower() == host.lower()
+            for entry in self._async_current_entries()
+            if exclude is None or entry.entry_id != exclude.entry_id
+        )
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Ask for the address of the dongle; the model is read from the machine."""
         if user_input is not None:
             host = user_input[CONF_HOST].strip()
+            if self._host_in_use(host):
+                return self.async_abort(reason="already_configured")
+            # Entries of earlier versions are identified by the address. The serial
+            # number replaces it once the machine has told it.
             await self.async_set_unique_id(host.lower())
             self._abort_if_unique_id_configured()
             self._host = host
@@ -282,6 +332,7 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
         if identity is not None:
             self._article_number = identity.article_number
             self._firmware = identity.firmware or None
+            self._serial_number = identity.serial_number
             if identity.ef_code and identity.model_name:
                 self._machine_type = identity.ef_code
                 self._model_name = identity.model_name
@@ -348,16 +399,31 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_pair_done(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Store the credentials issued by the machine."""
-        credentials = {CONF_CONN_ID: self._conn_id, CONF_AUTH_HASH: self._auth_hash}
+        """Store the credentials issued by the machine, or ask for the options."""
         if self.source == SOURCE_REAUTH:
             return self.async_update_reload_and_abort(
                 self._get_reauth_entry(),
-                data_updates={**credentials, CONF_PIN: self._pin},
+                data_updates={
+                    CONF_CONN_ID: self._conn_id,
+                    CONF_AUTH_HASH: self._auth_hash,
+                    CONF_PIN: self._pin,
+                },
             )
-        return self.async_create_entry(
-            title=f"JURA {self._model_name}",
-            data={
+        if self._serial_number:
+            await self.async_set_unique_id(str(self._serial_number))
+            self._abort_if_unique_id_configured()
+        return await self.async_step_options()
+
+    async def async_step_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask for the area and the options, then create the entry.
+
+        The area is only used when the device of the machine is created, so that
+        all of its entities get the name of the area in their entity IDs.
+        """
+        if user_input is not None:
+            data = {
                 CONF_HOST: self._host,
                 CONF_PORT: self._port,
                 CONF_PIN: self._pin,
@@ -366,13 +432,23 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_ARTICLE_NUMBER: self._article_number,
                 CONF_FIRMWARE: self._firmware,
                 CONF_MODEL_SOURCE: self._model_source,
-                **credentials,
-            },
-            options={
-                CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
-                CONF_ENABLE_BREWING: False,
-                CONF_ENABLE_MAINTENANCE: False,
-            },
+                CONF_CONN_ID: self._conn_id,
+                CONF_AUTH_HASH: self._auth_hash,
+            }
+            if self._serial_number:
+                data[CONF_SERIAL_NUMBER] = self._serial_number
+            if area := user_input.get(CONF_AREA):
+                data[CONF_AREA] = area
+            return self.async_create_entry(
+                title=f"JURA {self._model_name}",
+                data=data,
+                options=_options_from_input(user_input),
+            )
+        return self.async_show_form(
+            step_id="options",
+            data_schema=vol.Schema(
+                {vol.Optional(CONF_AREA): AreaSelector(), **_option_fields()}
+            ),
         )
 
     async def async_step_reauth(
@@ -402,78 +478,94 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Change the address of the machine, e.g. after a new DHCP lease."""
+        """Change the address of the machine, e.g. after a new DHCP lease.
+
+        Where the dongle cannot be reached by UDP, which is how the article number
+        is read, it can be entered here instead. It must belong to the model that is
+        set up: the machine type decides which profile is used and is not changed.
+        """
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
         if user_input is not None:
             host = user_input[CONF_HOST].strip()
-            if host.lower() != entry.unique_id:
-                await self.async_set_unique_id(host.lower())
-                self._abort_if_unique_id_configured()
-            client = JuraWifiClient(
-                host,
-                entry.data.get(CONF_PORT, DEFAULT_PORT),
-                entry.data[CONF_CONN_ID],
-                entry.data[CONF_AUTH_HASH],
-                entry.data.get(CONF_PIN, ""),
-                entry.data[CONF_MACHINE_TYPE],
-            )
-            try:
-                await self.hass.async_add_executor_job(client.check)
-            except JuraWifiAuthError:
-                errors["base"] = "invalid_auth"
-            except JuraWifiError:
-                errors["base"] = "cannot_connect"
-            else:
+            host_changed = host.lower() != str(entry.data[CONF_HOST]).lower()
+            if host_changed and self._host_in_use(host, exclude=entry):
+                return self.async_abort(reason="already_configured")
+            data_updates: dict[str, Any] = {CONF_HOST: host}
+            article = (user_input.get(CONF_ARTICLE_NUMBER) or "").strip()
+            if article and article != str(entry.data.get(CONF_ARTICLE_NUMBER) or ""):
+                resolved = await self.hass.async_add_executor_job(
+                    _resolve_article, article
+                )
+                if resolved is None:
+                    errors["base"] = "unknown_article"
+                elif resolved[2] != entry.data[CONF_MACHINE_TYPE]:
+                    errors["base"] = "article_other_model"
+                else:
+                    data_updates.update(
+                        {
+                            CONF_ARTICLE_NUMBER: resolved[0],
+                            CONF_MODEL_NAME: resolved[1],
+                            CONF_MODEL_SOURCE: MODEL_SOURCE_ARTICLE,
+                        }
+                    )
+            if host_changed and not errors:
+                client = JuraWifiClient(
+                    host,
+                    entry.data.get(CONF_PORT, DEFAULT_PORT),
+                    entry.data[CONF_CONN_ID],
+                    entry.data[CONF_AUTH_HASH],
+                    entry.data.get(CONF_PIN, ""),
+                    entry.data[CONF_MACHINE_TYPE],
+                )
+                try:
+                    await self.hass.async_add_executor_job(client.check)
+                except JuraWifiAuthError:
+                    errors["base"] = "invalid_auth"
+                except JuraWifiError:
+                    errors["base"] = "cannot_connect"
+            if not errors:
+                # The serial number identifies an entry that has one, the address
+                # one that has not.
+                unique_id = (
+                    entry.unique_id
+                    if entry.data.get(CONF_SERIAL_NUMBER)
+                    else host.lower()
+                )
                 return self.async_update_reload_and_abort(
-                    entry, unique_id=host.lower(), data_updates={CONF_HOST: host}
+                    entry, unique_id=unique_id, data_updates=data_updates
                 )
 
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=self.add_suggested_values_to_schema(
-                vol.Schema({vol.Required(CONF_HOST): TextSelector()}),
-                {CONF_HOST: entry.data[CONF_HOST]},
+                vol.Schema(
+                    {
+                        vol.Required(CONF_HOST): TextSelector(),
+                        vol.Optional(CONF_ARTICLE_NUMBER): TextSelector(),
+                    }
+                ),
+                {
+                    CONF_HOST: entry.data[CONF_HOST],
+                    CONF_ARTICLE_NUMBER: str(entry.data.get(CONF_ARTICLE_NUMBER) or ""),
+                },
             ),
             errors=errors,
         )
 
 
 class JuraWifiOptionsFlow(OptionsFlowWithReload):
-    """Polling interval and the opt-in for brewing."""
+    """Polling interval and the opt-ins for brewing, maintenance and settings."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the options."""
         if user_input is not None:
-            return self.async_create_entry(
-                data={
-                    CONF_SCAN_INTERVAL: int(user_input[CONF_SCAN_INTERVAL]),
-                    CONF_ENABLE_BREWING: user_input[CONF_ENABLE_BREWING],
-                    CONF_ENABLE_MAINTENANCE: user_input[CONF_ENABLE_MAINTENANCE],
-                }
-            )
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=MIN_SCAN_INTERVAL,
-                        max=MAX_SCAN_INTERVAL,
-                        step=5,
-                        unit_of_measurement="s",
-                        mode=NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Required(CONF_ENABLE_BREWING, default=False): BooleanSelector(),
-                vol.Required(CONF_ENABLE_MAINTENANCE, default=False): BooleanSelector(),
-            }
-        )
+            return self.async_create_entry(data=_options_from_input(user_input))
         return self.async_show_form(
             step_id="init",
             data_schema=self.add_suggested_values_to_schema(
-                schema, self.config_entry.options
+                vol.Schema(_option_fields()), self.config_entry.options
             ),
         )

@@ -2,19 +2,67 @@
 
 from __future__ import annotations
 
-from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.core import HomeAssistant
+import voluptuous as vol
 
-from .api import JuraWifiClient
+from homeassistant.const import CONF_HOST, CONF_PORT, Platform
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.service import async_register_platform_entity_service
+from homeassistant.helpers.typing import ConfigType
+
+from .api import BREW_OPTIONS, JuraWifiClient
+from .button import JuraWifiBrewButton
 from .const import (
     CONF_AUTH_HASH,
     CONF_CONN_ID,
     CONF_MACHINE_TYPE,
     CONF_PIN,
     DEFAULT_PORT,
+    DOMAIN,
     PLATFORMS,
+    SERVICE_BREW,
 )
-from .coordinator import JuraWifiConfigEntry, JuraWifiCoordinator
+from .coordinator import JuraWifiConfigEntry, JuraWifiCoordinator, cache_store
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+# The fields of the action are the recipe parameters of the brew options. Whether a
+# value fits the drink is checked against its profile when the action runs.
+BREW_SCHEMA = {
+    vol.Optional(option.key): (
+        vol.All(cv.string, vol.Lower) if option.named else vol.Coerce(int)
+    )
+    for option in BREW_OPTIONS
+}
+
+
+async def _async_brew(entity: Entity, call: ServiceCall) -> None:
+    """Brew the drink of a brew button with single parameters of its recipe changed."""
+    if not isinstance(entity, JuraWifiBrewButton):
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="not_a_brew_button"
+        )
+    options = {
+        option.key: call.data[option.key]
+        for option in BREW_OPTIONS
+        if option.key in call.data
+    }
+    await entity.async_brew_with_options(options)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the actions of the integration."""
+    async_register_platform_entity_service(
+        hass,
+        DOMAIN,
+        SERVICE_BREW,
+        entity_domain=Platform.BUTTON,
+        schema=BREW_SCHEMA,
+        func=_async_brew,
+    )
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: JuraWifiConfigEntry) -> bool:
@@ -36,5 +84,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: JuraWifiConfigEntry) -> 
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: JuraWifiConfigEntry) -> bool:
-    """Unload a config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    """Unload a config entry and keep what the machine reported last."""
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        await entry.runtime_data.async_save_cache()
+    return unloaded
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: JuraWifiConfigEntry) -> None:
+    """Delete the cache of a config entry that was removed."""
+    await cache_store(hass, entry.entry_id).async_remove()

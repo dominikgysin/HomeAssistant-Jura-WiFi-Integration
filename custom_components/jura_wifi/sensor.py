@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from jura_connect import ProductDef
@@ -36,14 +37,20 @@ PARALLEL_UPDATES = 0
 PRODUCT_LABELS = {
     "hotwater_portion_normal": "Hot water",
     "milk_foam": "Milk foam",
+    "powderproduct": "Powder product",
 }
 
 
 @dataclass(frozen=True, kw_only=True)
 class JuraWifiSensorDescription(SensorEntityDescription):
-    """Describes a JURA sensor."""
+    """Describes a JURA sensor.
+
+    ``available_fn`` tells from the data whether the machine reports the value at
+    all; without it the sensor is available whenever the coordinator is.
+    """
 
     value_fn: Callable[[JuraWifiData], StateType]
+    available_fn: Callable[[JuraWifiData], bool] | None = None
 
 
 def _total_brews(data: JuraWifiData) -> int | None:
@@ -56,6 +63,11 @@ def _product_brews(data: JuraWifiData, product: str) -> int | None:
 
 def _percent(data: JuraWifiData, field: str) -> int | None:
     return data.snapshot.maintenance_percent.get(field) if data.snapshot else None
+
+
+def _reports_percent(data: JuraWifiData, field: str) -> bool:
+    """Whether the machine reports the indicator; not knowing it yet counts as yes."""
+    return data.snapshot is None or field in data.snapshot.maintenance_percent
 
 
 def _cycles(data: JuraWifiData, field: str) -> int | None:
@@ -77,7 +89,9 @@ TOTAL_BREWS_DESCRIPTION = JuraWifiSensorDescription(
     value_fn=_total_brews,
 )
 
-# Maintenance indicators: field name in the machine profile -> entity key.
+# Maintenance indicators: field name in the machine profile -> entity key. A
+# machine reports 0xFF for an indicator it does not have (the E8 does that for the
+# filter without a filter), and the sensor is not available then.
 PERCENT_DESCRIPTIONS: dict[str, JuraWifiSensorDescription] = {
     field: JuraWifiSensorDescription(
         key=key,
@@ -86,6 +100,7 @@ PERCENT_DESCRIPTIONS: dict[str, JuraWifiSensorDescription] = {
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=enabled,
         value_fn=lambda data, field=field: _percent(data, field),
+        available_fn=lambda data, field=field: _reports_percent(data, field),
     )
     for field, key, enabled in (
         ("cleaning", "cleaning_need", True),
@@ -119,6 +134,15 @@ def product_label(product: ProductDef) -> str:
     return PRODUCT_LABELS.get(product.name, product.raw_name)
 
 
+def _is_powder(product: ProductDef) -> bool:
+    """Whether the product is ground coffee from the powder compartment.
+
+    The profile of the E8 gives its powder product the kind of a coffee, so the name
+    counts as well.
+    """
+    return product.kind == "P" or "powder" in product.name
+
+
 def _product_description(product: ProductDef) -> JuraWifiSensorDescription:
     name = product.name
     return JuraWifiSensorDescription(
@@ -126,6 +150,7 @@ def _product_description(product: ProductDef) -> JuraWifiSensorDescription:
         translation_key="product_brews",
         translation_placeholders={"product": product_label(product)},
         state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_registry_enabled_default=not _is_powder(product),
         value_fn=lambda data: _product_brews(data, name),
     )
 
@@ -142,12 +167,15 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         JuraWifiStatusSensor(coordinator, STATUS_DESCRIPTION),
         JuraWifiModelSensor(coordinator),
+        JuraWifiLastSeenSensor(coordinator),
         JuraWifiSensor(coordinator, TOTAL_BREWS_DESCRIPTION),
     ]
+    # Every product gets its counter, also those that the profile does not offer as
+    # a drink: the machine counts the doubles (and a double counts twice in the
+    # total) and the powder product as well.
     entities.extend(
         JuraWifiSensor(coordinator, _product_description(product))
         for product in profile.products
-        if product.active
     )
     entities.extend(
         JuraWifiSensor(coordinator, PERCENT_DESCRIPTIONS[field])
@@ -177,9 +205,42 @@ class JuraWifiSensor(JuraWifiEntity, SensorEntity):
         self.entity_description = description
 
     @property
+    def available(self) -> bool:
+        """Return False if the machine does not report the value at all."""
+        if not super().available:
+            return False
+        available_fn = self.entity_description.available_fn
+        return available_fn is None or available_fn(self.coordinator.data)
+
+    @property
     def native_value(self) -> StateType:
         """Return the sensor value."""
         return self.entity_description.value_fn(self.coordinator.data)
+
+
+class JuraWifiLastSeenSensor(JuraWifiEntity, SensorEntity):
+    """When the machine last answered a poll, also before Home Assistant restarted."""
+
+    entity_description = SensorEntityDescription(
+        key="last_seen",
+        translation_key="last_seen",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    )
+
+    def __init__(self, coordinator: JuraWifiCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, "last_seen")
+
+    @property
+    def available(self) -> bool:
+        """The time is what is wanted while the machine is switched off."""
+        return True
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the time of the last poll that the machine answered."""
+        return self.coordinator.last_seen
 
 
 class JuraWifiModelSensor(JuraWifiEntity, SensorEntity):
@@ -236,7 +297,7 @@ class JuraWifiStatusSensor(JuraWifiSensor):
                 attributes["activity_detail"] = data.activity.detail
             return attributes
         snapshot = data.snapshot
-        if snapshot is None:
+        if snapshot is None or snapshot.restored:
             return None
         return {
             "active_alerts": sorted(snapshot.active_alerts),

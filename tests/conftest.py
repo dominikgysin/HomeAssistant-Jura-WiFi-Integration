@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from jura_connect import load_profile
@@ -21,6 +22,7 @@ from custom_components.jura_wifi.const import (
     CONF_MODEL_SOURCE,
     CONF_PIN,
     CONF_SCAN_INTERVAL,
+    CONF_SERIAL_NUMBER,
     DOMAIN,
     MODEL_SOURCE_DISCOVERY,
 )
@@ -30,12 +32,16 @@ from homeassistant.core import HomeAssistant
 HOST = "192.0.2.10"
 AUTH_HASH = "f" * 64
 
+# The serial number is a 16 bit field of the discovery reply of the dongle.
+SERIAL = 4711
+
 # What the J.O.E. app shows for the real machine: article 15833, E8 (SDS).
 IDENTITY = MachineIdentity(
     article_number=15833,
     firmware="TT237W V06.11",
     ef_code="EF1120",
     model_name="E8 (SDS)",
+    serial_number=SERIAL,
 )
 
 # A progress frame captured from a real E8 whose display sat in its menu.
@@ -116,6 +122,15 @@ def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Allow Home Assistant to load the custom integration."""
 
 
+@pytest.fixture(autouse=True)
+def cache_storage(hass_storage: dict[str, Any]) -> dict[str, Any]:
+    """Keep the cache of the integration out of the file system.
+
+    What the integration wrote is found in the returned dictionary, by storage key.
+    """
+    return hass_storage
+
+
 @pytest.fixture
 def mock_client_cls() -> Generator[MagicMock]:
     """Replace the blocking client class so that no socket is ever opened."""
@@ -128,11 +143,18 @@ def mock_client_cls() -> Generator[MagicMock]:
 
 @pytest.fixture
 def mock_discover() -> Generator[MagicMock]:
-    """Replace the UDP discovery; by default the machine announces its model."""
-    with patch(
-        "custom_components.jura_wifi.config_flow.discover_machine",
-        return_value=IDENTITY,
-    ) as discover:
+    """Replace the UDP discovery; by default the machine announces its model.
+
+    The setup flow and the background fill-in of an existing entry use the same
+    replacement, so that their calls are counted together.
+    """
+    with (
+        patch(
+            "custom_components.jura_wifi.config_flow.discover_machine",
+            return_value=IDENTITY,
+        ) as discover,
+        patch("custom_components.jura_wifi.coordinator.discover_machine", discover),
+    ):
         yield discover
 
 
@@ -148,7 +170,31 @@ def mock_client(mock_client_cls: MagicMock, mock_discover: MagicMock) -> MagicMo
 
 @pytest.fixture
 def mock_config_entry() -> MockConfigEntry:
-    """Return a configured entry for an E8 (SDS)."""
+    """Return a configured entry for an E8 (SDS), as the setup creates it now."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="JURA E8 (SDS)",
+        unique_id=str(SERIAL),
+        data={
+            CONF_HOST: HOST,
+            CONF_PORT: 51515,
+            CONF_PIN: "",
+            CONF_MACHINE_TYPE: "EF1120",
+            CONF_MODEL_NAME: "E8 (SDS)",
+            CONF_ARTICLE_NUMBER: 15833,
+            CONF_FIRMWARE: "TT237W V06.11",
+            CONF_SERIAL_NUMBER: SERIAL,
+            CONF_MODEL_SOURCE: MODEL_SOURCE_DISCOVERY,
+            CONF_CONN_ID: "homeassistant-12345678",
+            CONF_AUTH_HASH: AUTH_HASH,
+        },
+        options={CONF_SCAN_INTERVAL: 60, CONF_ENABLE_BREWING: False},
+    )
+
+
+@pytest.fixture
+def legacy_config_entry() -> MockConfigEntry:
+    """Return an entry as 0.1.0 created it: no article, firmware or serial number."""
     return MockConfigEntry(
         domain=DOMAIN,
         title="JURA E8 (SDS)",
@@ -159,9 +205,6 @@ def mock_config_entry() -> MockConfigEntry:
             CONF_PIN: "",
             CONF_MACHINE_TYPE: "EF1120",
             CONF_MODEL_NAME: "E8 (SDS)",
-            CONF_ARTICLE_NUMBER: 15833,
-            CONF_FIRMWARE: "TT237W V06.11",
-            CONF_MODEL_SOURCE: MODEL_SOURCE_DISCOVERY,
             CONF_CONN_ID: "homeassistant-12345678",
             CONF_AUTH_HASH: AUTH_HASH,
         },

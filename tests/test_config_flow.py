@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from unittest.mock import MagicMock, patch
 
+from jura_connect.profile import _catalogue
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -18,11 +19,13 @@ from custom_components.jura_wifi.api import (
     MachineIdentity,
 )
 from custom_components.jura_wifi.const import (
+    CONF_AREA,
     CONF_ARTICLE_NUMBER,
     CONF_AUTH_HASH,
     CONF_CONN_ID,
     CONF_ENABLE_BREWING,
     CONF_ENABLE_MAINTENANCE,
+    CONF_ENABLE_SETTINGS,
     CONF_FIRMWARE,
     CONF_MACHINE_TYPE,
     CONF_MODEL,
@@ -30,6 +33,7 @@ from custom_components.jura_wifi.const import (
     CONF_MODEL_SOURCE,
     CONF_PIN,
     CONF_SCAN_INTERVAL,
+    CONF_SERIAL_NUMBER,
     DOMAIN,
     MODEL_SOURCE_ARTICLE,
     MODEL_SOURCE_DISCOVERY,
@@ -39,11 +43,19 @@ from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import area_registry as ar, entity_registry as er
 
-from .conftest import AUTH_HASH, HOST, IDENTITY, setup_entry
+from .conftest import AUTH_HASH, HOST, IDENTITY, SERIAL, setup_entry
 
 USER_INPUT = {CONF_HOST: HOST}
+
+# What the form of the options asks for, as answered without any change.
+OPTIONS_INPUT = {
+    CONF_SCAN_INTERVAL: 60,
+    CONF_ENABLE_BREWING: False,
+    CONF_ENABLE_MAINTENANCE: False,
+    CONF_ENABLE_SETTINGS: False,
+}
 
 
 async def _submit_user_input(hass: HomeAssistant) -> dict:
@@ -61,6 +73,15 @@ async def _settle(hass: HomeAssistant, result: dict) -> dict:
         await hass.async_block_till_done()
         result = await hass.config_entries.flow.async_configure(result["flow_id"])
     return result
+
+
+async def _finish(hass: HomeAssistant, result: dict, **answers) -> dict:
+    """Answer the step that asks for the area and the options, then create the entry."""
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "options"
+    return await hass.config_entries.flow.async_configure(
+        result["flow_id"], {**OPTIONS_INPUT, **answers}
+    )
 
 
 async def _pair(hass: HomeAssistant, release: threading.Event) -> dict:
@@ -103,7 +124,7 @@ def _pair_outcomes(
 async def test_user_flow(
     hass: HomeAssistant, mock_client: MagicMock, mock_discover: MagicMock
 ) -> None:
-    """Only the address is asked; the model is read from the machine."""
+    """Only the address is asked first; the model is read from the machine."""
     calls, release = _pair_outcomes(mock_client, AUTH_HASH)
 
     result = await hass.config_entries.flow.async_init(
@@ -121,22 +142,38 @@ async def test_user_flow(
     release.set()
     result = await _settle(hass, result)
 
+    # After the pairing and the identification the area and the options are asked.
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "options"
+    assert [str(key) for key in result["data_schema"].schema] == [
+        CONF_AREA,
+        CONF_SCAN_INTERVAL,
+        CONF_ENABLE_BREWING,
+        CONF_ENABLE_MAINTENANCE,
+        CONF_ENABLE_SETTINGS,
+    ]
+    result = await _finish(hass, result)
+
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "JURA E8 (SDS)"
-    assert result["result"].unique_id == HOST
+    # The serial number of the machine identifies the entry, not the address.
+    assert result["result"].unique_id == str(SERIAL)
     assert result["data"][CONF_HOST] == HOST
     assert result["data"][CONF_PORT] == 51515
     assert result["data"][CONF_MACHINE_TYPE] == "EF1120"
     assert result["data"][CONF_MODEL_NAME] == "E8 (SDS)"
     assert result["data"][CONF_ARTICLE_NUMBER] == 15833
     assert result["data"][CONF_FIRMWARE] == "TT237W V06.11"
+    assert result["data"][CONF_SERIAL_NUMBER] == SERIAL
     assert result["data"][CONF_MODEL_SOURCE] == MODEL_SOURCE_DISCOVERY
     assert result["data"][CONF_AUTH_HASH] == AUTH_HASH
     assert result["data"][CONF_CONN_ID].startswith("homeassistant-")
+    assert CONF_AREA not in result["data"]
     assert result["options"] == {
         CONF_SCAN_INTERVAL: 60,
         CONF_ENABLE_BREWING: False,
         CONF_ENABLE_MAINTENANCE: False,
+        CONF_ENABLE_SETTINGS: False,
     }
     assert len(calls) == 1
     mock_discover.assert_called_once_with(HOST)
@@ -184,6 +221,7 @@ async def test_identify_shows_progress_while_searching(
 
         found.set()
         result = await _settle(hass, result)
+        result = await _finish(hass, result)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_MODEL_NAME] == "E8 (SDS)"
 
@@ -203,8 +241,12 @@ async def test_article_number_when_the_machine_does_not_announce_itself(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_ARTICLE_NUMBER: " 15833 "}
     )
+    result = await _finish(hass, result)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "JURA E8 (SDS)"
+    # No serial number is known without the discovery: the address identifies it.
+    assert result["result"].unique_id == HOST
+    assert CONF_SERIAL_NUMBER not in result["data"]
     assert result["data"][CONF_MACHINE_TYPE] == "EF1120"
     assert result["data"][CONF_MODEL_NAME] == "E8 (SDS)"
     assert result["data"][CONF_ARTICLE_NUMBER] == 15833
@@ -234,6 +276,7 @@ async def test_unknown_article_number_can_be_corrected(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_ARTICLE_NUMBER: "15713"}
     )
+    result = await _finish(hass, result)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_MODEL_NAME] == "E8 (SD)"
 
@@ -259,6 +302,7 @@ async def test_empty_article_number_opens_the_model_list(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_MODEL: "EF1120|E8 (SD)"}
     )
+    result = await _finish(hass, result)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_MACHINE_TYPE] == "EF1120"
     assert result["data"][CONF_MODEL_NAME] == "E8 (SD)"
@@ -283,6 +327,7 @@ async def test_article_missing_from_the_catalogue_keeps_what_was_learned(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_MODEL: "EF1120|E8 (SDS)"}
     )
+    result = await _finish(hass, result)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_ARTICLE_NUMBER] == 19999
     assert result["data"][CONF_FIRMWARE] == "TT237W V09.99"
@@ -353,6 +398,7 @@ async def test_pairing_errors_can_be_retried(
 
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     result = await _settle(hass, result)
+    result = await _finish(hass, result)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert len(calls) == 2
     # The dongle remembers earlier attempts, so the retry uses a new identifier.
@@ -381,6 +427,7 @@ async def test_wrong_pin_can_be_corrected(
         result["flow_id"], {CONF_PIN: "4711"}
     )
     result = await _settle(hass, result)
+    result = await _finish(hass, result)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_PIN] == "4711"
     pairing_calls = [call for call in mock_client_cls.call_args_list if call.args]
@@ -499,7 +546,160 @@ async def test_reconfigure(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
     assert mock_config_entry.data[CONF_HOST] == NEW_HOST
-    assert mock_config_entry.unique_id == NEW_HOST
+    # The serial number identifies the entry, so the new address does not change it.
+    assert mock_config_entry.unique_id == str(SERIAL)
+
+
+async def test_reconfigure_of_an_entry_identified_by_its_address(
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    mock_discover: MagicMock,
+    legacy_config_entry: MockConfigEntry,
+) -> None:
+    """An entry that has no serial number yet follows the address."""
+    mock_discover.return_value = None  # the dongle cannot be reached by UDP
+    legacy_config_entry.add_to_hass(hass)
+    result = await legacy_config_entry.start_reconfigure_flow(hass)
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: NEW_HOST}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert result["reason"] == "reconfigure_successful"
+    assert legacy_config_entry.data[CONF_HOST] == NEW_HOST
+    assert legacy_config_entry.unique_id == NEW_HOST
+
+
+async def test_reconfigure_refuses_an_address_that_another_entry_uses(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """The address is compared with that of the other entries, not with their IDs."""
+    mock_config_entry.add_to_hass(hass)
+    other = MockConfigEntry(
+        domain=DOMAIN,
+        title="JURA second",
+        unique_id="999",
+        data={**mock_config_entry.data, CONF_HOST: NEW_HOST, CONF_SERIAL_NUMBER: 999},
+    )
+    other.add_to_hass(hass)
+    result = await mock_config_entry.start_reconfigure_flow(hass)
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: NEW_HOST.upper()}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert mock_config_entry.data[CONF_HOST] == HOST
+    mock_client.check.assert_not_called()
+
+
+def _article_of(ef_code: str) -> int:
+    """Return an article number of the catalogue that belongs to a machine type."""
+    return next(
+        entry.article_number for entry in _catalogue() if entry.ef_code == ef_code
+    )
+
+
+async def test_reconfigure_offers_the_article_number(
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    mock_discover: MagicMock,
+    legacy_config_entry: MockConfigEntry,
+) -> None:
+    """Where the dongle cannot be reached by UDP the article number is entered here."""
+    mock_discover.return_value = None  # the dongle cannot be reached by UDP
+    legacy_config_entry.add_to_hass(hass)
+    result = await legacy_config_entry.start_reconfigure_flow(hass)
+    assert {str(key) for key in result["data_schema"].schema} == {
+        CONF_HOST,
+        CONF_ARTICLE_NUMBER,
+    }
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: HOST, CONF_ARTICLE_NUMBER: " 15713 "}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert result["reason"] == "reconfigure_successful"
+    data = legacy_config_entry.data
+    assert data[CONF_ARTICLE_NUMBER] == 15713
+    assert data[CONF_MODEL_NAME] == "E8 (SD)"
+    assert data[CONF_MODEL_SOURCE] == MODEL_SOURCE_ARTICLE
+    # The machine type decides which profile is used. It stays what it was.
+    assert data[CONF_MACHINE_TYPE] == "EF1120"
+    # The address did not change, so there was nothing to check on the machine,
+    # which may well be switched off.
+    mock_client.check.assert_not_called()
+
+
+async def test_reconfigure_prefills_the_article_number_that_is_known(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """A stored article number is shown, and entering it again changes nothing."""
+    mock_config_entry.add_to_hass(hass)
+    result = await mock_config_entry.start_reconfigure_flow(hass)
+    suggested = {
+        str(key): key.description["suggested_value"]
+        for key in result["data_schema"].schema
+        if key.description
+    }
+    assert suggested == {CONF_HOST: HOST, CONF_ARTICLE_NUMBER: "15833"}
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: HOST, CONF_ARTICLE_NUMBER: "15833"}
+    )
+
+    assert result["reason"] == "reconfigure_successful"
+    # The model of the entry came from the machine itself and stays so.
+    assert mock_config_entry.data[CONF_MODEL_SOURCE] == MODEL_SOURCE_DISCOVERY
+
+
+async def test_reconfigure_keeps_the_article_number_when_the_field_is_empty(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """Leaving the field empty does not clear what is stored."""
+    mock_config_entry.add_to_hass(hass)
+    result = await mock_config_entry.start_reconfigure_flow(hass)
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: HOST, CONF_ARTICLE_NUMBER: ""}
+    )
+
+    assert result["reason"] == "reconfigure_successful"
+    assert mock_config_entry.data[CONF_ARTICLE_NUMBER] == 15833
+
+
+@pytest.mark.parametrize(
+    ("typed", "error"),
+    [
+        ("99999", "unknown_article"),
+        ("abc", "unknown_article"),
+        # the article number of another machine type, here a machine without milk system
+        (str(_article_of("EF1089")), "article_other_model"),
+    ],
+)
+async def test_reconfigure_never_changes_the_machine_type(
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    legacy_config_entry: MockConfigEntry,
+    typed: str,
+    error: str,
+) -> None:
+    """An article number of another model is refused, not silently taken over."""
+    legacy_config_entry.add_to_hass(hass)
+    result = await legacy_config_entry.start_reconfigure_flow(hass)
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: HOST, CONF_ARTICLE_NUMBER: typed}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": error}
+    assert legacy_config_entry.data[CONF_MACHINE_TYPE] == "EF1120"
+    assert CONF_ARTICLE_NUMBER not in legacy_config_entry.data
+    assert legacy_config_entry.data[CONF_MODEL_NAME] == "E8 (SDS)"
 
 
 async def test_options_flow_enables_the_controls(
@@ -515,6 +715,7 @@ async def test_options_flow_enables_the_controls(
         CONF_SCAN_INTERVAL,
         CONF_ENABLE_BREWING,
         CONF_ENABLE_MAINTENANCE,
+        CONF_ENABLE_SETTINGS,
     }
 
     result = await hass.config_entries.options.async_configure(
@@ -523,6 +724,7 @@ async def test_options_flow_enables_the_controls(
             CONF_SCAN_INTERVAL: 120,
             CONF_ENABLE_BREWING: True,
             CONF_ENABLE_MAINTENANCE: True,
+            CONF_ENABLE_SETTINGS: True,
         },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -532,22 +734,24 @@ async def test_options_flow_enables_the_controls(
         CONF_SCAN_INTERVAL: 120,
         CONF_ENABLE_BREWING: True,
         CONF_ENABLE_MAINTENANCE: True,
+        CONF_ENABLE_SETTINGS: True,
     }
     assert mock_config_entry.state is ConfigEntryState.LOADED
     registry = er.async_get(hass)
-    assert any(
-        entry.domain == "button"
+    domains = {
+        entry.domain
         for entry in er.async_entries_for_config_entry(
             registry, mock_config_entry.entry_id
         )
-    )
+    }
+    assert {"button", "number", "select", "switch"} <= domains
     assert mock_config_entry.runtime_data.update_interval.total_seconds() == 120
 
 
-async def test_options_of_an_older_entry_have_no_maintenance_key(
+async def test_options_of_an_older_entry_have_no_maintenance_or_settings_key(
     hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
 ) -> None:
-    """An entry from before the maintenance buttons gets the new switch, off."""
+    """An entry from before the newer buttons gets their switches, off."""
     mock_config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
         mock_config_entry, options={CONF_SCAN_INTERVAL: 60, CONF_ENABLE_BREWING: True}
@@ -556,7 +760,7 @@ async def test_options_of_an_older_entry_have_no_maintenance_key(
     result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
     assert result["type"] is FlowResultType.FORM
 
-    # Submitting the form untouched fills in the default of the new switch.
+    # Submitting the form untouched fills in the defaults of the new switches.
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_SCAN_INTERVAL: 60, CONF_ENABLE_BREWING: True}
     )
@@ -565,4 +769,117 @@ async def test_options_of_an_older_entry_have_no_maintenance_key(
         CONF_SCAN_INTERVAL: 60,
         CONF_ENABLE_BREWING: True,
         CONF_ENABLE_MAINTENANCE: False,
+        CONF_ENABLE_SETTINGS: False,
     }
+
+
+async def test_the_setup_asks_for_the_area_and_the_options(
+    hass: HomeAssistant, mock_client: MagicMock
+) -> None:
+    """The area is optional data of the entry; the rest become its options."""
+    area = ar.async_get(hass).async_create("Kitchen")
+    _, release = _pair_outcomes(mock_client, AUTH_HASH)
+
+    result = await _pair(hass, release)
+    result = await _finish(
+        hass,
+        result,
+        **{
+            CONF_AREA: area.id,
+            CONF_SCAN_INTERVAL: 120,
+            CONF_ENABLE_BREWING: True,
+            CONF_ENABLE_MAINTENANCE: True,
+            CONF_ENABLE_SETTINGS: True,
+        },
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_AREA] == area.id
+    assert result["options"] == {
+        CONF_SCAN_INTERVAL: 120,
+        CONF_ENABLE_BREWING: True,
+        CONF_ENABLE_MAINTENANCE: True,
+        CONF_ENABLE_SETTINGS: True,
+    }
+
+
+async def test_the_area_can_be_left_out(
+    hass: HomeAssistant, mock_client: MagicMock
+) -> None:
+    """Without an area the entry holds none, and the entry is set up all the same."""
+    _, release = _pair_outcomes(mock_client, AUTH_HASH)
+
+    result = await _pair(hass, release)
+    result = await _finish(hass, result)
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert CONF_AREA not in result["data"]
+    assert result["result"].state is ConfigEntryState.LOADED
+
+
+async def test_the_options_are_asked_after_the_model_is_known(
+    hass: HomeAssistant, mock_client: MagicMock, mock_discover: MagicMock
+) -> None:
+    """Nothing is created before the options were answered."""
+    _, release = _pair_outcomes(mock_client, AUTH_HASH)
+
+    result = await _pair(hass, release)
+
+    assert result["step_id"] == "options"
+    assert hass.config_entries.async_entries(DOMAIN) == []
+
+
+async def test_a_machine_that_is_set_up_already_is_found_by_its_serial_number(
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """The dongle may have got another address; the machine is still the same."""
+    mock_config_entry.add_to_hass(hass)
+    _, release = _pair_outcomes(mock_client, AUTH_HASH)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: NEW_HOST}
+    )
+    release.set()
+
+    result = await _settle(hass, result)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
+
+
+async def test_a_second_machine_is_set_up_next_to_the_first(
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    mock_discover: MagicMock,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Another serial number is another machine."""
+    mock_config_entry.add_to_hass(hass)
+    mock_discover.return_value = MachineIdentity(
+        article_number=15833,
+        firmware="TT237W V06.11",
+        ef_code="EF1120",
+        model_name="E8 (SDS)",
+        serial_number=SERIAL + 1,
+    )
+    _, release = _pair_outcomes(mock_client, AUTH_HASH)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: NEW_HOST}
+    )
+    release.set()
+
+    result = await _settle(hass, result)
+    result = await _finish(hass, result)
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["result"].unique_id == str(SERIAL + 1)
+    assert result["data"][CONF_HOST] == NEW_HOST

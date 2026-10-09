@@ -40,15 +40,37 @@
           "model": "The model name including the regional variant, e.g. \"E8 (SDS)\". Type to search the list."
         }
       },
+      "options": {
+        "title": "Area and options",
+        "description": "Where is the machine, and what should Home Assistant offer? Everything except the area can be changed later under *Configure* on the integration.",
+        "data": {
+          "area": "Area",
+          "scan_interval": "Update interval",
+          "enable_brewing": "Brew buttons",
+          "enable_maintenance": "Maintenance buttons",
+          "enable_settings": "Machine settings"
+        },
+        "data_description": {
+          "area": "Optional. The device of the machine is created in this area, so that all of its entities get the name of the area. This happens once; to move the machine later, change the area of the device.",
+          "scan_interval": "Seconds between two polls. The dongle accepts only one connection at a time, so do not go too low.",
+          "enable_brewing": "Add a button per drink that brews it with the recipe stored on the machine, as selected at its display. Make sure a cup is in place before pressing. Also adds a cancel button and enables the action Brew with options.",
+          "enable_maintenance": "Add buttons that start the maintenance programs of the machine (cleaning, descaling, milk system rinse, coffee system rinse, ...). The machine then asks for the confirmations on its display; the coffee system rinse runs right away, so put a cup under the spout. Also adds a cancel button.",
+          "enable_settings": "Add entities for the settings of the machine (water hardness, switch-off time, language, ...) and a switch that locks its front panel. The values are read from the machine and written to it; a change needs the machine to be on and idle."
+        }
+      },
       "reauth_confirm": {
         "title": "Pair again",
         "description": "The machine at {host} no longer accepts the stored credentials. Switch it on, **leave the settings menu** (the display has to show the start screen) and close the J.O.E. app. Confirm the connection request on the display after you submit."
       },
       "reconfigure": {
         "title": "Change the address",
-        "description": "Enter the new IP address of the Wi-Fi Connect dongle.",
+        "description": "Enter the new IP address of the Wi-Fi Connect dongle.\n\nIf Home Assistant cannot read the model from the machine because it is in another network than the dongle, add the article number: it is shown in the J.O.E. app next to the machine name and on the type plate. It has to belong to the model that is set up.",
         "data": {
-          "host": "IP address"
+          "host": "IP address",
+          "article_number": "Article number"
+        },
+        "data_description": {
+          "article_number": "Optional, five digits. Leave empty to keep what is stored."
         }
       }
     },
@@ -65,6 +87,7 @@
       "machine_busy": "The machine is busy (brewing or running a maintenance program). Wait until it is finished and try again.",
       "wrong_pin": "The machine rejected the PIN.",
       "unknown_article": "This article number is not in the list of known JURA machines.",
+      "article_other_model": "This article number belongs to a different machine type than the one that is set up. To change the model, remove the integration and set it up again.",
       "unknown": "Unexpected error, see the Home Assistant log."
     },
     "abort": {
@@ -80,12 +103,14 @@
         "data": {
           "scan_interval": "Update interval",
           "enable_brewing": "Brew buttons",
-          "enable_maintenance": "Maintenance buttons"
+          "enable_maintenance": "Maintenance buttons",
+          "enable_settings": "Machine settings"
         },
         "data_description": {
           "scan_interval": "Seconds between two polls. The dongle accepts only one connection at a time, so do not go too low.",
-          "enable_brewing": "Add a button per drink that brews it with the recipe stored on the machine, as selected at its display. Make sure a cup is in place before pressing. Also adds a cancel button.",
-          "enable_maintenance": "Add buttons that start the maintenance programs of the machine (cleaning, descaling, milk system rinse, coffee system rinse, ...). The machine then asks for the confirmations on its display; the coffee system rinse runs right away, so put a cup under the spout. Also adds a cancel button."
+          "enable_brewing": "Add a button per drink that brews it with the recipe stored on the machine, as selected at its display. Make sure a cup is in place before pressing. Also adds a cancel button and enables the action Brew with options.",
+          "enable_maintenance": "Add buttons that start the maintenance programs of the machine (cleaning, descaling, milk system rinse, coffee system rinse, ...). The machine then asks for the confirmations on its display; the coffee system rinse runs right away, so put a cup under the spout. Also adds a cancel button.",
+          "enable_settings": "Add entities for the settings of the machine (water hardness, switch-off time, language, ...) and a switch that locks its front panel. The values are read from the machine and written to it; a change needs the machine to be on and idle."
         }
       }
     }
@@ -103,7 +128,22 @@
       "descaling_due": { "name": "Descaling due" },
       "filter_change_due": { "name": "Filter change due" },
       "milk_rinse_due": { "name": "Milk system rinse due" },
-      "milk_clean_due": { "name": "Milk system cleaning due" }
+      "milk_clean_due": { "name": "Milk system cleaning due" },
+      "system_fill_needed": { "name": "System fill needed" },
+      "tap_open": { "name": "Tap open" },
+      "front_cover_open": { "name": "Front cover open" },
+      "machine_error": { "name": "Machine error" },
+      "outlet_missing": { "name": "Outlet missing" },
+      "rear_cover_missing": { "name": "Rear cover missing" },
+      "water_tank_removal_requested": { "name": "Water tank removal requested" },
+      "ventilation_closed": { "name": "Ventilation closed" },
+      "powder_cover_open": { "name": "Powder cover open" },
+      "filter_detected": { "name": "Filter detected" },
+      "keys_locked": { "name": "Keys locked" },
+      "remote_screen_active": { "name": "Remote screen active" },
+      "cleaning_recommended": { "name": "Cleaning recommended" },
+      "descaling_recommended": { "name": "Descaling recommended" },
+      "filter_change_recommended": { "name": "Filter change recommended" }
     },
     "sensor": {
       "status": {
@@ -117,11 +157,13 @@
           "maintenance": "Maintenance",
           "programming": "Programming mode",
           "busy": "Busy",
+          "switching_off": "Switching off",
           "energy_saving": "Energy saving",
           "ready": "Ready"
         }
       },
       "model": { "name": "Model" },
+      "last_seen": { "name": "Last seen" },
       "total_brews": { "name": "Total brews" },
       "product_brews": { "name": "{product} count" },
       "cleaning_need": { "name": "Cleaning need" },
@@ -143,6 +185,138 @@
       "start_cappu_rinse": { "name": "Rinse milk system" },
       "start_cappu_clean": { "name": "Clean milk system" },
       "start_coffee_rinse": { "name": "Rinse coffee system" }
+    },
+    "number": {
+      "setting_hardness": { "name": "Water hardness" },
+      "setting_other": { "name": "{setting}" }
+    },
+    "select": {
+      "setting_hardness": {
+        "name": "Water hardness",
+        "state": {
+          "step_1": "Step 1",
+          "step_2": "Step 2",
+          "step_3": "Step 3",
+          "step_4": "Step 4"
+        }
+      },
+      "setting_auto_off": {
+        "name": "Switch-off time",
+        "state": {
+          "15min": "15 minutes",
+          "30min": "30 minutes",
+          "1h": "1 hour",
+          "2h": "2 hours",
+          "3h": "3 hours",
+          "4h": "4 hours",
+          "5h": "5 hours",
+          "6h": "6 hours",
+          "7h": "7 hours",
+          "8h": "8 hours",
+          "9h": "9 hours"
+        }
+      },
+      "setting_units": {
+        "name": "Units",
+        "state": {
+          "ml": "Millilitres",
+          "oz": "Ounces"
+        }
+      },
+      "setting_language": {
+        "name": "Language",
+        "state": {
+          "german": "German",
+          "english": "English",
+          "french": "French",
+          "italian": "Italian",
+          "dutch": "Dutch",
+          "spanish": "Spanish",
+          "portuguese": "Portuguese",
+          "swedish": "Swedish",
+          "russian": "Russian",
+          "polish": "Polish",
+          "esti": "Estonian",
+          "bulgarian": "Bulgarian",
+          "chinese": "Chinese",
+          "czech": "Czech",
+          "danish": "Danish",
+          "finnish": "Finnish",
+          "hebrew": "Hebrew",
+          "hollandisch": "Dutch",
+          "hungarian": "Hungarian",
+          "japanese": "Japanese",
+          "korean": "Korean",
+          "latvian": "Latvian",
+          "lithuanian": "Lithuanian",
+          "norwegian": "Norwegian",
+          "romanian": "Romanian",
+          "slovenian": "Slovenian",
+          "thai": "Thai",
+          "turkish": "Turkish"
+        }
+      },
+      "setting_brewing_mode": {
+        "name": "Brewing mode",
+        "state": {
+          "ask": "Ask each time",
+          "classic": "Classic",
+          "light": "Light",
+          "sweet": "Sweet",
+          "cold": "Cold",
+          "profile1": "Profile 1",
+          "profile2": "Profile 2",
+          "profile3": "Profile 3",
+          "profile4": "Profile 4"
+        }
+      },
+      "setting_other": { "name": "{setting}" }
+    },
+    "switch": {
+      "setting_quality_assistant": { "name": "Quality assistant" },
+      "setting_other": { "name": "{setting}" },
+      "front_panel_lock": { "name": "Front panel lock" }
+    }
+  },
+  "selector": {
+    "brew_temperature": {
+      "options": {
+        "low": "Low",
+        "normal": "Normal",
+        "high": "High"
+      }
+    }
+  },
+  "services": {
+    "brew": {
+      "name": "Brew with options",
+      "description": "Brews the drink of a brew button and changes single parameters of its recipe for this drink only. Everything that is not given stays as stored on the machine. Make sure a cup is in place.",
+      "fields": {
+        "strength": {
+          "name": "Strength",
+          "description": "Coffee strength, as a level the machine offers for the drink."
+        },
+        "water_amount": {
+          "name": "Water amount",
+          "description": "Amount of water in millilitres, within the range the drink allows."
+        },
+        "temperature": {
+          "name": "Temperature",
+          "description": "Brewing temperature."
+        },
+        "milk_foam_time": {
+          "name": "Milk foam time",
+          "description": "Seconds that milk foam is dispensed."
+        },
+        "milk_break": {
+          "name": "Milk break",
+          "description": "Seconds of pause between the milk and the coffee."
+        },
+        "bypass": {
+          "name": "Bypass",
+          "description": "Millilitres of water that bypass the coffee, as for an Americano."
+        }
+      }
     }
   },
   "exceptions": {
@@ -172,6 +346,27 @@
     },
     "cancel_failed": {
       "message": "Could not cancel the current action: {error}"
+    },
+    "setting_failed": {
+      "message": "Could not change {setting}: {error}"
+    },
+    "lock_failed": {
+      "message": "Could not lock or release the front panel: {error}"
+    },
+    "not_a_brew_button": {
+      "message": "This action works on the brew buttons only."
+    },
+    "brew_option_unsupported": {
+      "message": "{product} has no {option} to set."
+    },
+    "brew_option_range": {
+      "message": "{option} for {product} has to be between {minimum} and {maximum}."
+    },
+    "brew_option_step": {
+      "message": "{option} for {product} has to be {minimum} plus a multiple of {step}."
+    },
+    "brew_option_choice": {
+      "message": "{option} for {product} has to be one of: {allowed}."
     }
   }
 }

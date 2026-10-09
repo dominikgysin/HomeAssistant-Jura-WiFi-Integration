@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from jura_connect import ProductDef
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
-from homeassistant.const import EntityCategory
+from homeassistant.const import EntityCategory, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .api import UNDECLARED_PROGRAMS
 from .const import CONF_ENABLE_BREWING, CONF_ENABLE_MAINTENANCE
 from .coordinator import JuraWifiConfigEntry, JuraWifiCoordinator
-from .entity import JuraWifiEntity
+from .entity import JuraWifiEntity, async_remove_stale_entities
 from .sensor import product_label
 
 # Product kinds that can be started remotely (everything but powder products).
@@ -65,11 +67,9 @@ async def async_setup_entry(
 
     # Buttons of an option that was switched off again would stay behind as
     # unavailable entities.
-    registry = er.async_get(hass)
-    wanted = {entity.unique_id for entity in entities}
-    for registered in er.async_entries_for_config_entry(registry, entry.entry_id):
-        if registered.domain == "button" and registered.unique_id not in wanted:
-            registry.async_remove(registered.entity_id)
+    async_remove_stale_entities(
+        hass, entry, Platform.BUTTON, {entity.unique_id for entity in entities}
+    )
 
     async_add_entities(entities)
 
@@ -94,6 +94,10 @@ class JuraWifiBrewButton(JuraWifiEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Start the drink."""
         await self.coordinator.async_brew(self._product, self._label)
+
+    async def async_brew_with_options(self, options: Mapping[str, Any]) -> None:
+        """Start the drink with single parameters of its recipe changed."""
+        await self.coordinator.async_brew(self._product, self._label, options)
 
 
 class JuraWifiMaintenanceButton(JuraWifiEntity, ButtonEntity):
