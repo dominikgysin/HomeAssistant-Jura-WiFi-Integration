@@ -141,6 +141,8 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
     """Set up a JURA machine with a Wi-Fi Connect dongle."""
 
     VERSION = 1
+    # 1.2: the serial number is the one on the type plate (0.5.2).
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
         """Initialize the flow."""
@@ -151,7 +153,7 @@ class JuraWifiConfigFlow(ConfigFlow, domain=DOMAIN):
         self._model_name = ""
         self._article_number: int | None = None
         self._firmware: str | None = None
-        self._serial_number: int | None = None
+        self._serial_number: str | None = None
         self._model_source = MODEL_SOURCE_MANUAL
         self._conn_id = ""
         self._auth_hash = ""

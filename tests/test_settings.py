@@ -759,7 +759,7 @@ async def test_the_lock_needs_an_idle_machine(
     mock_config_entry: MockConfigEntry,
     freezer,
 ) -> None:
-    """The keys of a machine that is brewing are left alone."""
+    """A machine that is brewing is not locked."""
     await _with_settings(hass, mock_config_entry)
     mock_client.fetch.side_effect = JuraWifiBusy(MachineActivity("brewing", "coffee"))
     await poll(hass, freezer)
@@ -775,6 +775,42 @@ async def test_the_lock_needs_an_idle_machine(
     mock_client.set_front_panel_lock.assert_not_called()
 
 
+async def test_the_front_panel_can_be_released_while_the_machine_is_busy(
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    machine: FakeMachine,
+    mock_config_entry: MockConfigEntry,
+    freezer,
+) -> None:
+    """The keys can always be given back while the machine answers.
+
+    While the machine is busy its alerts are those of the poll before, so the switch
+    shows the release until a poll reads the alerts again.
+    """
+    machine.locked = True
+    await _with_settings(hass, mock_config_entry)
+    lock = entity_id(hass, "switch", mock_config_entry, "front_panel_lock")
+    assert hass.states.get(lock).state == STATE_ON
+    mock_client.fetch.side_effect = JuraWifiBusy(MachineActivity("brewing", "coffee"))
+    await poll(hass, freezer)
+    assert state(hass, "sensor", mock_config_entry, "status").state == "brewing"
+
+    await call(hass, "switch", "turn_off", lock)
+    await _settle(hass)
+
+    mock_client.set_front_panel_lock.assert_called_once_with(False)
+    assert not machine.locked
+    assert hass.states.get(lock).state == STATE_OFF
+    # the polls while the machine is busy do not bring back the alerts of before
+    await poll(hass, freezer, seconds=16)
+    assert hass.states.get(lock).state == STATE_OFF
+
+    mock_client.fetch.side_effect = machine.fetch
+    await poll(hass, freezer, seconds=16)
+    assert state(hass, "sensor", mock_config_entry, "status").state == "ready"
+    assert hass.states.get(lock).state == STATE_OFF
+
+
 async def test_the_lock_needs_the_machine_to_be_reachable(
     hass: HomeAssistant,
     mock_client: MagicMock,
@@ -788,8 +824,9 @@ async def test_the_lock_needs_the_machine_to_be_reachable(
     assert state(hass, "switch", mock_config_entry, "front_panel_lock").state == (
         STATE_UNAVAILABLE
     )
-    with pytest.raises(HomeAssistantError):
-        await mock_config_entry.runtime_data.async_set_front_panel_lock(True)
+    for locked in (True, False):
+        with pytest.raises(HomeAssistantError):
+            await mock_config_entry.runtime_data.async_set_front_panel_lock(locked)
     mock_client.set_front_panel_lock.assert_not_called()
 
 

@@ -29,6 +29,7 @@ from jura_connect import (
     KIND_WATER_AMOUNT,
     HandshakeError,
     JuraClient,
+    Machine,
     MachineProfile,
     PairingTimeout,
     ProcessError,
@@ -188,7 +189,8 @@ class MachineSnapshot:
     ``restored`` marks a snapshot that was loaded from the cache: only the counters
     and the maintenance values are known then, the alerts are not. ``settings``
     holds the raw values of the machine settings that this poll read, or ``None``
-    if it did not read them.
+    if it did not read them. ``total_brews`` is ``None`` and ``product_counts`` is
+    empty when the counters could not be read.
     """
 
     active_alerts: frozenset[str]
@@ -208,15 +210,16 @@ class MachineIdentity:
 
     ``ef_code`` and ``model_name`` are ``None`` when the article number is not
     in the catalogue of the J.O.E. app that ships with the library, or when the
-    library has no profile for that machine type. ``serial_number`` is ``None``
-    when the reply holds none.
+    library has no profile for that machine type. ``serial_number`` is the number
+    on the type plate, see :func:`type_plate_serial`, or ``None`` when the reply
+    does not hold what it is made of.
     """
 
     article_number: int
     firmware: str
     ef_code: str | None
     model_name: str | None
-    serial_number: int | None = None
+    serial_number: str | None = None
 
 
 def _broadcast_targets(host_ip: str) -> list[str]:
@@ -278,17 +281,23 @@ def discover_machine(
         firmware=machine.fw,
         ef_code=entry.ef_code if entry is not None and known else None,
         model_name=entry.friendly_name if entry is not None and known else None,
-        serial_number=_usable_serial(machine.serial_number),
+        serial_number=type_plate_serial(machine),
     )
 
 
-def _usable_serial(serial: int) -> int | None:
-    """Return the serial number of a discovery reply, or ``None`` if it holds none.
+def type_plate_serial(machine: Machine) -> str | None:
+    """Return the serial number on the type plate of the machine, from its reply.
 
-    The field has 16 bits. A machine that was never given a serial number leaves it
-    erased, which reads as all zeros or all ones.
+    The type plate shows the production date as YYYYMMDD followed by the machine
+    number with six digits, for example 20240117001234; checked against the plate
+    of one E8. The discovery reply holds both. The field that the library calls
+    ``serial_number`` is another number.
+    Returns ``None`` when the reply has no production date, or when the 16 bit
+    machine number is erased, which reads as all zeros or all ones.
     """
-    return serial if 0 < serial < 0xFFFF else None
+    if machine.production_date is None or not 0 < machine.machine_number < 0xFFFF:
+        return None
+    return f"{machine.production_date:%Y%m%d}{machine.machine_number:06d}"
 
 
 def describe_activity(
@@ -661,7 +670,8 @@ class JuraWifiClient:
                 info = client.read_machine_info(timeout=READ_TIMEOUT)
                 try:
                     products = client.read_product_counters()
-                except ValueError:
+                except ValueError as err:
+                    _LOGGER.debug("The product counters could not be read: %s", err)
                     products = None
                 settings = self._read_settings(client) if with_settings else None
             except TimeoutError as err:

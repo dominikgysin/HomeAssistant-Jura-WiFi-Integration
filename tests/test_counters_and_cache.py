@@ -117,6 +117,98 @@ async def test_the_counter_of_the_powder_product_is_disabled_by_default(
         assert entry.disabled_by is None, key
 
 
+# The machine answered, but its reply of the counters could not be read.
+NO_COUNTERS = dataclasses.replace(
+    REAL_E8,
+    total_brews=None,
+    product_counts={},
+    maintenance_percent={"cleaning": 20, "descale": 0},
+)
+
+
+async def test_the_counters_are_kept_when_their_reply_cannot_be_read(
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    mock_config_entry: MockConfigEntry,
+    freezer,
+) -> None:
+    """The counters stay what the machine reported last, instead of unknown."""
+    mock_client.fetch.return_value = REAL_E8
+    await setup_entry(hass, mock_config_entry)
+
+    mock_client.fetch.return_value = NO_COUNTERS
+    await poll(hass, freezer)
+
+    assert state(hass, "sensor", mock_config_entry, "total_brews").state == "27"
+    assert state(hass, "sensor", mock_config_entry, "brews_espresso").state == "10"
+    assert state(hass, "sensor", mock_config_entry, "brews_2x_espresso").state == "1"
+    # what the same poll did read is taken over
+    assert state(hass, "sensor", mock_config_entry, "cleaning_need").state == "20"
+    assert state(hass, "sensor", mock_config_entry, "status").state == "ready"
+
+    # the next reply that can be read counts again, nothing was added up meanwhile
+    mock_client.fetch.return_value = dataclasses.replace(
+        REAL_E8,
+        total_brews=28,
+        product_counts={**REAL_E8.product_counts, "espresso": 11},
+    )
+    await poll(hass, freezer)
+
+    assert state(hass, "sensor", mock_config_entry, "total_brews").state == "28"
+    assert state(hass, "sensor", mock_config_entry, "brews_espresso").state == "11"
+
+
+async def test_the_cache_keeps_the_counters_when_their_reply_cannot_be_read(
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    mock_config_entry: MockConfigEntry,
+    cache_storage: dict,
+    freezer,
+) -> None:
+    """The next start shows the counters, not the gap of the last poll."""
+    mock_client.fetch.return_value = REAL_E8
+    await setup_entry(hass, mock_config_entry)
+    mock_client.fetch.return_value = NO_COUNTERS
+    await poll(hass, freezer)
+
+    assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+    stored = cache_storage[_cache_key(mock_config_entry)]["data"]["snapshot"]
+    assert stored["total_brews"] == 27
+    assert stored["product_counts"] == REAL_E8.product_counts
+    assert stored["maintenance_percent"] == {"cleaning": 20, "descale": 0}
+
+
+async def test_the_counters_of_the_cache_are_kept_when_their_reply_cannot_be_read(
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    mock_config_entry: MockConfigEntry,
+    cache_storage: dict,
+) -> None:
+    """The first poll after a restart cannot read the counters: the cache stays."""
+    cache_storage[_cache_key(mock_config_entry)] = _cached(
+        mock_config_entry, snapshot={"total_brews": 7, "product_counts": {"coffee": 3}}
+    )
+    mock_client.fetch.return_value = NO_COUNTERS
+    await setup_entry(hass, mock_config_entry)
+
+    assert state(hass, "sensor", mock_config_entry, "status").state == "ready"
+    assert state(hass, "sensor", mock_config_entry, "total_brews").state == "7"
+    assert state(hass, "sensor", mock_config_entry, "brews_coffee").state == "3"
+
+
+async def test_counters_that_were_never_read_stay_unknown(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> None:
+    """Without an earlier reply there is nothing to keep, and nothing is made up."""
+    mock_client.fetch.return_value = NO_COUNTERS
+    await setup_entry(hass, mock_config_entry)
+
+    assert state(hass, "sensor", mock_config_entry, "status").state == "ready"
+    for key in ("total_brews", "brews_espresso"):
+        assert state(hass, "sensor", mock_config_entry, key).state == STATE_UNKNOWN
+
+
 async def test_filter_wear_is_unavailable_when_the_machine_does_not_report_it(
     hass: HomeAssistant,
     mock_client: MagicMock,

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import dataclasses
+import datetime
+import logging
 import socket
 import threading
 from types import SimpleNamespace
@@ -45,6 +47,7 @@ from custom_components.jura_wifi.api import (
     discover_machine,
     load_profile_extras,
     recipe_from_stored,
+    type_plate_serial,
 )
 
 from .conftest import (
@@ -52,6 +55,7 @@ from .conftest import (
     E8_RECIPE_ARGUMENTS,
     E8_STORED_RECIPES,
     P_MODE_FRAME,
+    SERIAL,
 )
 
 MACHINE_INFO = MachineInfo(
@@ -126,12 +130,16 @@ def test_fetch_builds_snapshot(fake: MagicMock) -> None:
     fake.close.assert_called_once()
 
 
-def test_fetch_without_product_counters(fake: MagicMock) -> None:
-    """A machine without the counter bank still yields a snapshot."""
+def test_fetch_without_product_counters(
+    fake: MagicMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A machine without the counter bank still yields a snapshot; why is logged."""
+    caplog.set_level(logging.DEBUG, logger=api.__name__)
     fake.read_product_counters.side_effect = ValueError("no @TR:32")
     snapshot = _client().fetch()
     assert snapshot.total_brews is None
     assert snapshot.product_counts == {}
+    assert "The product counters could not be read: no @TR:32" in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -737,16 +745,17 @@ def test_pairing_does_not_need_the_model(fake: MagicMock) -> None:
 
 
 def _machine(address: str = "192.0.2.10", article: int = 15833) -> Machine:
+    """Return a discovery reply; its type plate reads SERIAL."""
     return Machine(
         address=address,
         name="Coffeemaker",
         fw="TT237W V06.11",
         hw_id="",
         article_number=article,
-        machine_number=1,
-        serial_number=2,
-        production_date=None,
-        uchi_production_date=None,
+        machine_number=1234,
+        serial_number=321,
+        production_date=datetime.date(2024, 1, 17),
+        uchi_production_date=datetime.date(2023, 11, 20),
         status_flags=0x10,
         status_hex="",
         raw=b"",
@@ -776,7 +785,7 @@ def test_discovery_reads_the_identity_from_the_broadcast_reply(
         firmware="TT237W V06.11",
         ef_code="EF1120",
         model_name="E8 (SDS)",
-        serial_number=2,
+        serial_number=SERIAL,
     )
     assert udp.discover.call_args.kwargs["targets"] == ["255.255.255.255"]
 
@@ -811,7 +820,7 @@ def test_discovery_with_an_article_the_catalogue_does_not_know(
         firmware="TT237W V06.11",
         ef_code=None,
         model_name=None,
-        serial_number=2,
+        serial_number=SERIAL,
     )
 
 
@@ -842,17 +851,40 @@ def test_discovery_with_an_unresolvable_host(udp: SimpleNamespace) -> None:
 
 
 @pytest.mark.parametrize(
-    ("serial", "expected"),
-    [(2, 2), (4711, 4711), (0xFFFE, 0xFFFE), (0, None), (0xFFFF, None)],
+    ("production_date", "machine_number", "expected"),
+    [
+        (datetime.date(2024, 1, 17), 1234, "20240117001234"),
+        (datetime.date(2024, 1, 17), 7, "20240117000007"),
+        (datetime.date(2031, 12, 1), 0xFFFE, "20311201065534"),
+        (datetime.date(2024, 1, 17), 0, None),
+        (datetime.date(2024, 1, 17), 0xFFFF, None),
+        (None, 1234, None),
+    ],
 )
-def test_a_serial_number_that_the_reply_does_not_hold_is_left_out(
-    udp: SimpleNamespace, serial: int, expected: int | None
+def test_the_serial_number_is_the_one_on_the_type_plate(
+    udp: SimpleNamespace,
+    production_date: datetime.date | None,
+    machine_number: int,
+    expected: str | None,
 ) -> None:
-    """An erased field of the 16 bit serial number reads as all zeros or all ones."""
-    udp.probe.return_value = dataclasses.replace(_machine(), serial_number=serial)
+    """The plate shows the production date and the machine number with six digits.
+
+    An erased machine number reads as all zeros or all ones, and without the
+    production date the reply does not hold the serial number at all.
+    """
+    udp.probe.return_value = dataclasses.replace(
+        _machine(), production_date=production_date, machine_number=machine_number
+    )
     identity = discover_machine("192.0.2.10")
     assert identity is not None
     assert identity.serial_number == expected
+
+
+@pytest.mark.parametrize("field", [0, 321, 0xFFFF])
+def test_the_field_the_library_calls_serial_number_is_not_used(field: int) -> None:
+    """It is another number of the reply, which 0.5.0 and 0.5.1 took by mistake."""
+    machine = dataclasses.replace(_machine(), serial_number=field)
+    assert type_plate_serial(machine) == SERIAL
 
 
 E8_SETTING_VALUES = {

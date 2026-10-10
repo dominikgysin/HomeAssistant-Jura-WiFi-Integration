@@ -58,10 +58,11 @@ def identity_updates(
     """Return the entry data that a discovery reply can fill in.
 
     Entries of the first versions know neither the article number nor the firmware,
-    and no entry before 0.5.0 knows the serial number. Those are added where they
-    are missing. The machine type decides which profile is used and is never touched.
-    A reply for that very type confirms the model: article number, model name and the
-    source of the model then come from the machine, as in the setup.
+    and no entry before 0.5.2 knows the serial number of the type plate. Those are
+    added where they are missing. The machine type decides which profile is used and
+    is never touched. A reply for that very type confirms the model: article number,
+    model name and the source of the model then come from the machine, as in the
+    setup.
     """
     updates: dict[str, Any] = {}
     if not data.get(CONF_FIRMWARE) and identity.firmware:

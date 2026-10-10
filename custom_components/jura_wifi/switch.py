@@ -97,7 +97,9 @@ class JuraWifiFrontPanelLock(JuraWifiEntity, SwitchEntity):
     """Locks the keys of the machine, or releases them again.
 
     The state is the one the machine reports with its alerts. Right after a command
-    the switch shows what was asked for, until the check that follows reports.
+    the switch shows what was asked for, until a poll reads the alerts again. While
+    the machine is busy, the alerts are those of the poll before, so what was asked
+    is shown until the machine is idle again.
     """
 
     _attr_entity_category = EntityCategory.CONFIG
@@ -110,7 +112,7 @@ class JuraWifiFrontPanelLock(JuraWifiEntity, SwitchEntity):
 
     @property
     def available(self) -> bool:
-        """The panel can be locked while the machine answers."""
+        """The panel can be locked or released while the machine answers."""
         return super().available and self.online and self.live_snapshot is not None
 
     @property
@@ -125,8 +127,10 @@ class JuraWifiFrontPanelLock(JuraWifiEntity, SwitchEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Show what the machine reports again, now that it has been asked."""
-        self._asked = None
+        """Show what the machine reports again, once a poll has read its alerts."""
+        data = self.coordinator.data
+        if not data.online or data.activity is None:
+            self._asked = None
         super()._handle_coordinator_update()
 
     async def async_turn_on(self, **kwargs: Any) -> None:

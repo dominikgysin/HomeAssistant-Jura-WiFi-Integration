@@ -7,7 +7,7 @@ import voluptuous as vol
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.service import async_register_platform_entity_service
 from homeassistant.helpers.typing import ConfigType
@@ -19,12 +19,14 @@ from .const import (
     CONF_CONN_ID,
     CONF_MACHINE_TYPE,
     CONF_PIN,
+    CONF_SERIAL_NUMBER,
     DEFAULT_PORT,
     DOMAIN,
     PLATFORMS,
     SERVICE_BREW,
 )
 from .coordinator import JuraWifiConfigEntry, JuraWifiCoordinator, cache_store
+from .identity import machine_device
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -62,6 +64,37 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         schema=BREW_SCHEMA,
         func=_async_brew,
     )
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: JuraWifiConfigEntry) -> bool:
+    """Bring an entry of an earlier version up to date.
+
+    Version 1.2: 0.5.0 and 0.5.1 stored a field of the discovery reply as the serial
+    number, which is not the number on the type plate. It is dropped, and so are the
+    entry ID and the serial number of the device that came from it. The serial
+    number of the type plate is filled in the next time the machine answers. The
+    identifiers of the device and of the entities do not depend on it.
+    """
+    if entry.version > 1:
+        return False
+    if entry.minor_version < 2:
+        data = dict(entry.data)
+        unique_id = entry.unique_id
+        if (wrong := data.pop(CONF_SERIAL_NUMBER, None)) is not None:
+            # The address identifies an entry without a serial number, as before.
+            host = str(data[CONF_HOST]).lower()
+            if (
+                unique_id == str(wrong)
+                and hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, host)
+                is None
+            ):
+                unique_id = host
+            if (device := machine_device(hass, entry)) is not None:
+                dr.async_get(hass).async_update_device(device.id, serial_number=None)
+        hass.config_entries.async_update_entry(
+            entry, data=data, unique_id=unique_id, minor_version=2
+        )
     return True
 
 

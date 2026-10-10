@@ -275,7 +275,7 @@ async def test_the_serial_number_of_another_entry_is_not_taken(
     assert twin.state is ConfigEntryState.LOADED
     assert twin.unique_id == "192.0.2.99"
     assert mock_config_entry.unique_id == str(SERIAL)
-    assert "JURA twin has the serial number 4711" in caplog.text
+    assert f"JURA twin has the serial number {SERIAL}" in caplog.text
     assert "JURA E8 (SDS) is set up with as well" in caplog.text
 
 
@@ -305,7 +305,7 @@ def test_a_new_firmware_is_not_taken_over_silently() -> None:
     data = {
         CONF_MACHINE_TYPE: "EF1120",
         CONF_FIRMWARE: "TT237W V05.00",
-        CONF_SERIAL_NUMBER: 1,
+        CONF_SERIAL_NUMBER: "20230102000001",
     }
     updates = identity_updates(data, IDENTITY)
     assert CONF_FIRMWARE not in updates

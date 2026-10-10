@@ -8,6 +8,7 @@ the sequence of commands that actually reaches the machine.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from unittest.mock import MagicMock, patch
 
 from jura_connect.simulator import Simulator, SimulatorConfig
 import pytest
@@ -58,6 +59,19 @@ def quick_sessions(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(api, "SESSION_GAP_SECONDS", 0.0)
     monkeypatch.setattr(api, "READ_TIMEOUT", 1.5)
     api._GATES.clear()
+
+
+@pytest.fixture(autouse=True)
+def no_discovery() -> Iterator[MagicMock]:
+    """Never send a discovery into the network; the simulator does not answer it.
+
+    The entries of these tests know their machine, so it is not asked for anyway.
+    """
+    with patch(
+        "custom_components.jura_wifi.coordinator.discover_machine", return_value=None
+    ) as discover:
+        yield discover
+    discover.assert_not_called()
 
 
 @pytest.fixture
@@ -327,6 +341,7 @@ async def test_the_integration_controls_the_simulated_machine(
         domain=DOMAIN,
         title=mock_config_entry.title,
         unique_id=host,
+        minor_version=mock_config_entry.minor_version,
         data={
             **mock_config_entry.data,
             CONF_HOST: host,
@@ -551,6 +566,7 @@ async def _entry_for(
         domain=DOMAIN,
         title=template.title,
         unique_id=host,
+        minor_version=template.minor_version,
         data={
             **template.data,
             CONF_HOST: host,

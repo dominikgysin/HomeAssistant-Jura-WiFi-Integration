@@ -22,11 +22,13 @@ with JURA. The logo is an original drawing and not related to any JURA logo.
 | Area | State |
 | --- | --- |
 | JURA E8 (SDS) with Wi-Fi Connect V2 | pairing, status, counters, maintenance values and the stored drink recipes verified on a real machine (read-only), also while the machine is in energy-saving mode |
-| Home Assistant side (config flow, entities, offline handling, cache of the last values) | automated tests pass on Home Assistant 2025.10 and 2026.10; the integration was also loaded in a Home Assistant against the real E8 |
+| Home Assistant side (config flow, entities, offline handling, cache of the last values) | automated tests pass on Home Assistant 2025.10 and 2026.10; the integration runs in a Home Assistant against the real E8 |
+| Seen working on the real E8 with 0.5.0 and 0.5.1 | a counter for every product the machine reports, the double drinks included (together they make up the total of the machine); polling every 15 s while the machine is active (the status was back to `ready` one poll after a drink); the last counters and maintenance values after a restart while the machine was off, with `last_seen` on the status; filter wear *unavailable* on a machine that does not report it; the status `programming` while the menu of the machine was open; going offline when the machine switched itself off and online again when it was switched on, without an error; the six settings read from the machine |
 | Brew buttons, maintenance programs, cancel | the commands are tested end to end against the dongle simulator of the library (real protocol over TCP). On a real E8 (SDS) the **brew button (Coffee)**, the **milk system rinse** and the **coffee system rinse** were run through this integration on 2026-10-09: each press was followed by machine activity and counter changes. The other drinks use the same command. Cleaning, descaling, filter change, milk system cleaning and cancel were **not yet run on a real machine** |
-| Machine settings (read and write), front panel lock, brew with parameters, polling every 15 s while the machine is active (all new in 0.5.0) | covered by the library simulator only (real protocol over TCP) and **not yet run on a real machine**. The settings and the lock are off by default |
-| Busy machine (menu, brewing, maintenance program) | the machine then pushes progress frames instead of status frames; covered by tests using one frame captured from a real E8 in its menu |
-| Model detection, and filling in entries of older versions | article number, firmware and serial number announced by UDP broadcast (same network as the dongle only), article number or model list as fallback; the UDP part is **not yet verified against a real machine** |
+| Writing machine settings, front panel lock (also releasing it while the machine is busy), brew with parameters, the status `switching_off` | covered by the library simulator only (real protocol over TCP) and **not yet run on a real machine**. The settings and the lock are off by default. When the real E8 switched itself off with 0.5.x, it went from energy saving straight to offline, without `switching_off` |
+| Setup step for the area and the options (new in 0.5.0) | covered by the automated tests on both Home Assistant versions; not yet run in a real setup |
+| Busy machine (menu, brewing, maintenance program) | the machine then pushes progress frames instead of status frames; seen on the real E8 as `brewing` and `programming`, and covered by tests using one frame captured from a real E8 in its menu |
+| Model detection, and filling in entries of older versions | article number, firmware, production date and machine number announced by UDP broadcast (same network as the dongle only), article number or model list as fallback. The UDP part is verified on a real E8: an entry of 0.1.0 got its article number, firmware and model from it. The serial number is made of the production date and the machine number, as on the type plate; this was checked against the type plate of one E8 |
 | Other models | profiles for ~330 variants are bundled, untested |
 
 Requires Home Assistant **2025.10 or newer**.
@@ -67,8 +69,9 @@ Home Assistant configuration and restart Home Assistant.
    appears once.
 6. The **exact model is read from the machine** and kept in the
    [Model sensor](#entities). The machine announces its article number, its
-   firmware and its serial number by UDP broadcast, which does not leave the
-   local network. If Home Assistant is in another network than the dongle (VLAN,
+   firmware, its production date and its machine number by UDP broadcast, which
+   does not leave the local network; the last two make up the serial number on
+   its type plate. If Home Assistant is in another network than the dongle (VLAN,
    routed subnet) the setup asks for the **article number** instead: it is shown
    in the J.O.E. app next to the machine name and on the type plate on the
    underside of the machine (for example `15833` = E8 (SDS)). Leave it empty to
@@ -91,7 +94,7 @@ Home Assistant configuration and restart Home Assistant.
 | Problem sensors | water tank empty, grounds container full/missing, drip tray full/missing, beans empty, cleaning / descaling / filter / milk system rinse / milk system cleaning due, and the alerts that block the machine: system fill needed, tap open, front cover open, machine error |
 | Hardware state sensors | disabled by default: outlet missing, rear cover missing, water tank removal requested, ventilation closed, powder cover open. Diagnostic and disabled by default: filter detected, keys locked, remote screen active |
 | Maintenance recommended (binary sensors) | cleaning, descaling and filter change: on once the maintenance percent reaches the threshold of the machine profile (80 % on the E8), as the J.O.E. app recommends it. The machine asks for the maintenance itself later, which the *due* sensors show. Only for the maintenance the profile gives a threshold for |
-| Total brews, one counter per product | `total_increasing`, keep their last value while the machine is off. A counter exists for every product the machine reports, including the double drinks (*2x Espresso*, *2x Coffee*) that some profiles do not offer as a drink; the counter of the powder product is disabled by default. The values are read from the machine, nothing is counted in Home Assistant. The machine counts a double drink twice in its total, so the single counters add up to less than the total |
+| Total brews, one counter per product | `total_increasing`, keep their last value while the machine is off, and when a reply of the machine with the counters cannot be read. A counter exists for every product the machine reports, including the double drinks (*2x Espresso*, *2x Coffee*) that some profiles do not offer as a drink; the counter of the powder product is disabled by default. The values are read from the machine, nothing is counted in Home Assistant. The machine counts a double drink twice in its total, so the single counters add up to less than the total |
 | Cleaning need, descaling need, filter wear | percent of the interval used (filter wear is disabled by default). An indicator that the machine does not report, such as the filter on an E8 without one, is *unavailable* |
 | Maintenance cycle counters | diagnostic, disabled by default |
 | Brew buttons | one per drink, only if enabled in the options, see [Controls](#controls) |
@@ -219,9 +222,9 @@ profile declares.
   showing its menu Home Assistant refuses the change and says why.
 - The values are not kept over a restart. While the machine is off the entities
   are unavailable.
-- Reading and writing the settings has only been run against the simulator of
-  the library, not yet on a real machine, see [Status](#status). Try a change
-  that is easy to undo first and look at the display of the machine.
+- Reading the settings works on a real E8. Writing them has only been run against
+  the simulator of the library, not yet on a real machine, see [Status](#status).
+  Try a change that is easy to undo first and look at the display of the machine.
 
 ### Front panel lock
 
@@ -231,8 +234,10 @@ machine declares the commands for it (the E8 does, as *Remote Screen* and
 *Release Keys*) and the alerts that report the state. The state is what the
 machine reports with its alerts *keys locked* and *remote screen*; right after a
 command the switch shows what was asked for, until the check that follows has
-the answer of the machine. It needs the machine to be on and idle as well, and
-has not been run on a real machine yet.
+the answer of the machine. Locking needs the machine to be on and idle. The keys
+can be released whenever the machine answers, also while it brews or runs a
+program; it does not report its alerts meanwhile, so the switch shows the release
+until the machine is idle again. The lock has not been run on a real machine yet.
 
 ## Examples
 
@@ -324,9 +329,10 @@ for the cleaning. The same works for descaling and the filter change.
   sessions.
 - With the machine **switched off** the dongle is unreachable: the status shows
   `offline`. **Energy-saving mode** is fine, the dongle stays reachable and a
-  brew wakes the machine up. When the machine **switches itself off**, the E8
-  first counts down for about a quarter of an hour (the status is `switching_off`)
-  before the dongle disappears.
+  brew wakes the machine up. When the machine **switches itself off**, the E8 can
+  first count down for about a quarter of an hour (the status is then
+  `switching_off`) before the dongle disappears; it was also seen going from
+  energy saving straight to `offline`.
 - Home Assistant **remembers the last counters and maintenance values** that the
   machine reported, and the time it was last seen, and shows them after a restart
   while the machine is switched off, instead of *unknown*. The machine stays the
@@ -349,7 +355,20 @@ for the cleaning. The same works for descaling and the filter change.
   programming menu** it does not send its status, only what it is doing. The
   status then shows `brewing`, `maintenance` or `programming`, all other
   entities keep the values of the last full poll, and the buttons refuse to
-  start something else (the cancel button still works).
+  start something else (the cancel button and the release of the front panel
+  lock still work).
+- **A short drink or rinse may not show in the status.** While the machine is
+  idle it is polled at the update interval, and every 15 s only once it was seen
+  busy, so what starts and ends between two polls never shows as `brewing` or
+  `maintenance`. The counters are always right, because the machine keeps them:
+  build automations on a change of the total, of a drink counter or of a
+  maintenance counter rather than on the status. A shorter update interval (30 s
+  at least) narrows the gap, but it occupies the dongle more often, and the
+  J.O.E. app gets through less often.
+- The **last pressed time of a button** is lost when Home Assistant restarts
+  while the machine is off: Home Assistant restores the state of a button only if
+  it was not *unavailable*, and the buttons are unavailable while the machine is
+  off.
 - **Pairing is refused?** Leave the settings menu on the machine, close the
   J.O.E. app and try again. Home Assistant tells you when it sees that the
   machine is in its menu or busy; the reason of a refusal is also in the log.
@@ -361,9 +380,14 @@ for the cleaning. The same works for descaling and the filter change.
   *Reconfigure* has an optional **article number** field. It has to belong to the
   model that is set up: the machine type decides which profile is used and is
   never changed silently. To change it, set the machine up again.
-- The **serial number** of the machine identifies the entry where it is known
-  (instead of the IP address) and is shown on the device. The identifiers of the
-  device and of all entities stay as they were, so nothing is lost on an update.
+- The **serial number** is the one on the type plate: the production date
+  (YYYYMMDD) followed by the machine number with six digits, both from the UDP
+  discovery reply. It identifies the entry where it is known (instead of the IP
+  address) and is shown on the device. 0.5.0 and 0.5.1 took another field of the
+  reply for it; 0.5.2 drops that number when it is installed and fills in the
+  right one as soon as the dongle answers the discovery, with nothing to do for
+  you. The identifiers of the device and of all entities stay as they were, so
+  nothing is lost on an update.
 - If the machine forgets the pairing (for example after a dongle reset) Home
   Assistant asks to pair again.
 - The **logo** needs Home Assistant 2026.3 or newer; older versions show the

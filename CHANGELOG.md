@@ -7,6 +7,42 @@ version may change behaviour.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-10
+
+### Fixed
+
+- The **serial number** is now the one on the type plate of the machine: the
+  production date (YYYYMMDD) followed by the machine number with six digits, both
+  from the UDP discovery reply. 0.5.0 and 0.5.1 took another 16-bit field of the reply
+  for it, which the library calls `serial_number` but which is not the number on the
+  type plate. The composition was checked against the type plate of one E8.
+- Entries of 0.5.0 and 0.5.1 are corrected without anything to do. The update drops
+  the wrong number from the entry and from the device, and the entry is known by its
+  IP address again, as before 0.5.0. As soon as the dongle answers the discovery
+  (while the machine is on), the entry, its ID and the device get the serial number of
+  the type plate. The identifiers of the device and the IDs of all entities do not
+  depend on it and stay as they were, so no entity and no history is lost. The config
+  entry moves to version 1.2, which 0.5.1 can still load.
+- When the reply of the machine with the counters cannot be read, the total and the
+  product counters keep their last values instead of becoming unknown, and the cache
+  keeps them as well. The reason is logged at debug level. This was never seen on the
+  real E8.
+
+### Changed
+
+- The **front panel lock** can be released whenever the machine answers, also while it
+  brews or runs a program, for example a drink started in the J.O.E. app while the keys
+  are locked. Locking still needs an idle machine. A busy machine does not report its
+  alerts, so the switch shows the release until the machine is idle again. Like the
+  lock itself, this has only been run against the simulator of the library.
+- README: the status table tells what was seen working on the real E8 with 0.5.0 and
+  0.5.1 and what has only been run against the simulator. The note on switching off
+  no longer says that the E8 always counts down first: it was also seen going from
+  energy saving straight to offline. New notes recommend automations on the counters
+  rather than on the status `brewing` (a short drink can start and end between two
+  polls), and explain that the last pressed time of a button is lost when Home
+  Assistant restarts while the machine is off.
+
 ## [0.5.1] - 2026-10-10
 
 ### Removed
@@ -225,7 +261,8 @@ The behaviour of the integration is unchanged.
   status, problem and maintenance sensors and brew counters; opt-in brew buttons
   with the factory recipes; diagnostics; English and German translations.
 
-[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.4.0...v0.4.1

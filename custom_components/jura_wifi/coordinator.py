@@ -299,12 +299,27 @@ class JuraWifiCoordinator(DataUpdateCoordinator[JuraWifiData]):
     def _handle_snapshot(
         self, snapshot: MachineSnapshot, with_settings: bool
     ) -> JuraWifiData:
-        """Take over what a poll read from the machine."""
+        """Take over what a poll read from the machine.
+
+        When the counters could not be read this time, the values that the machine
+        reported before are kept, so that the counters do not drop to unknown.
+        """
         self._failures = 0
         if with_settings:
             self._settings.update(snapshot.settings or {})
             self._settings_read = dt_util.utcnow()
             self._settings_due = False
+        previous = self._snapshot
+        if (
+            snapshot.total_brews is None
+            and previous is not None
+            and previous.total_brews is not None
+        ):
+            snapshot = dataclasses.replace(
+                snapshot,
+                total_brews=previous.total_brews,
+                product_counts=previous.product_counts,
+            )
         self._snapshot = dataclasses.replace(snapshot, settings=None)
         self._mark_seen()
         return JuraWifiData(
@@ -399,9 +414,9 @@ class JuraWifiCoordinator(DataUpdateCoordinator[JuraWifiData]):
         """Ask the dongle who the machine is and fill in what the entry lacks.
 
         Entries of the first versions have no article number and no firmware, and no
-        entry has the serial number before 0.5.0. The discovery works when Home
-        Assistant is in the network of the dongle. It runs while the machine answers,
-        in the background, so that it never holds up the setup.
+        entry before 0.5.2 has the serial number of the type plate. The discovery
+        works when Home Assistant is in the network of the dongle. It runs while the
+        machine answers, in the background, so that it never holds up the setup.
         """
         try:
             identity = await self.hass.async_add_executor_job(
@@ -465,14 +480,17 @@ class JuraWifiCoordinator(DataUpdateCoordinator[JuraWifiData]):
                 device.id, **device_attributes(data)
             )
 
-    def _ensure_idle(self) -> None:
-        """Refuse to start anything unless the machine is reachable and idle."""
-        data = self.data
-        if not data.online:
+    def _ensure_online(self) -> None:
+        """Refuse to send anything unless the machine is reachable."""
+        if not self.data.online:
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="machine_offline"
             )
-        if data.activity is not None:
+
+    def _ensure_idle(self) -> None:
+        """Refuse to start anything unless the machine is reachable and idle."""
+        self._ensure_online()
+        if self.data.activity is not None:
             raise ServiceValidationError(
                 translation_domain=DOMAIN, translation_key="machine_busy"
             )
@@ -590,10 +608,7 @@ class JuraWifiCoordinator(DataUpdateCoordinator[JuraWifiData]):
         Allowed while the machine is busy, which is when it is needed.
         """
         async with self._lock:
-            if not self.data.online:
-                raise HomeAssistantError(
-                    translation_domain=DOMAIN, translation_key="machine_offline"
-                )
+            self._ensure_online()
             await self._async_command(
                 self.client.cancel_step,
                 translation_key="cancel_failed",
@@ -626,9 +641,16 @@ class JuraWifiCoordinator(DataUpdateCoordinator[JuraWifiData]):
         self._look_again_soon()
 
     async def async_set_front_panel_lock(self, locked: bool) -> None:
-        """Lock the front panel of the machine, or release it again."""
+        """Lock the front panel of the machine, or release it again.
+
+        Locking needs an idle machine. Releasing only needs a machine that answers,
+        so that the keys can be given back while it is busy as well.
+        """
         async with self._lock:
-            self._ensure_idle()
+            if locked:
+                self._ensure_idle()
+            else:
+                self._ensure_online()
             await self._async_command(
                 self.client.set_front_panel_lock,
                 locked,

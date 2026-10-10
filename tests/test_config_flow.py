@@ -157,7 +157,9 @@ async def test_user_flow(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "JURA E8 (SDS)"
     # The serial number of the machine identifies the entry, not the address.
-    assert result["result"].unique_id == str(SERIAL)
+    assert result["result"].unique_id == SERIAL
+    # A new entry is up to date, there is nothing to migrate.
+    assert (result["result"].version, result["result"].minor_version) == (1, 2)
     assert result["data"][CONF_HOST] == HOST
     assert result["data"][CONF_PORT] == 51515
     assert result["data"][CONF_MACHINE_TYPE] == "EF1120"
@@ -866,7 +868,7 @@ async def test_a_second_machine_is_set_up_next_to_the_first(
         firmware="TT237W V06.11",
         ef_code="EF1120",
         model_name="E8 (SDS)",
-        serial_number=SERIAL + 1,
+        serial_number="20240117001235",
     )
     _, release = _pair_outcomes(mock_client, AUTH_HASH)
     result = await hass.config_entries.flow.async_init(
@@ -881,5 +883,5 @@ async def test_a_second_machine_is_set_up_next_to_the_first(
     result = await _finish(hass, result)
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["result"].unique_id == str(SERIAL + 1)
+    assert result["result"].unique_id == "20240117001235"
     assert result["data"][CONF_HOST] == NEW_HOST

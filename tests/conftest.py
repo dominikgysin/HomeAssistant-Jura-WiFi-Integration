@@ -32,8 +32,9 @@ from homeassistant.core import HomeAssistant
 HOST = "192.0.2.10"
 AUTH_HASH = "f" * 64
 
-# The serial number is a 16 bit field of the discovery reply of the dongle.
-SERIAL = 4711
+# The serial number on the type plate: the production date and the machine number of
+# the discovery reply. Synthetic, like every value here that identifies a machine.
+SERIAL = "20240117001234"
 
 # What the J.O.E. app shows for the real machine: article 15833, E8 (SDS).
 IDENTITY = MachineIdentity(
@@ -174,7 +175,9 @@ def mock_config_entry() -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,
         title="JURA E8 (SDS)",
-        unique_id=str(SERIAL),
+        unique_id=SERIAL,
+        version=1,
+        minor_version=2,
         data={
             CONF_HOST: HOST,
             CONF_PORT: 51515,
@@ -199,6 +202,8 @@ def legacy_config_entry() -> MockConfigEntry:
         domain=DOMAIN,
         title="JURA E8 (SDS)",
         unique_id=HOST,
+        version=1,
+        minor_version=1,
         data={
             CONF_HOST: HOST,
             CONF_PORT: 51515,
