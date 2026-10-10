@@ -639,22 +639,3 @@ class JuraWifiCoordinator(DataUpdateCoordinator[JuraWifiData]):
             dataclasses.replace(self.data, settings=dict(self._settings))
         )
         self._look_again_soon()
-
-    async def async_set_front_panel_lock(self, locked: bool) -> None:
-        """Lock the front panel of the machine, or release it again.
-
-        Locking needs an idle machine. Releasing only needs a machine that answers,
-        so that the keys can be given back while it is busy as well.
-        """
-        async with self._lock:
-            if locked:
-                self._ensure_idle()
-            else:
-                self._ensure_online()
-            await self._async_command(
-                self.client.set_front_panel_lock,
-                locked,
-                translation_key="lock_failed",
-                placeholders={},
-            )
-        self._look_again_soon()

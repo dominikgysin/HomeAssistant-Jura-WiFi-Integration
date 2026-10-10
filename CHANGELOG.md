@@ -7,6 +7,33 @@ version may change behaviour.
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-10-10
+
+### Removed
+
+- The switch **Front panel lock** that 0.5.0 added with *Machine settings*. On a real
+  E8 the machine accepted the lock command, but its keys stayed usable and it never
+  reported the alerts *keys locked* or *remote screen*, so the switch went back to off
+  at the next poll. The profile of the E8 lists the two commands (*Remote Screen* and
+  *Release Keys*) as the first and the last step of reading the statistics of the
+  machine. That looks like a short hold while the J.O.E. app reads the counters, not
+  like a lasting lock; this is an interpretation of the profile, not verified. The lock
+  and release commands are gone as well, including the release while the machine is
+  busy that 0.5.2 added, and the texts of the option no longer mention the lock.
+- The existing entity is removed from the entity registry when the entry is set up,
+  with *Machine settings* on or off, whether it is enabled or disabled, also while the
+  machine is off. Nothing else is removed: the binary sensors *keys locked* and *remote
+  screen active* stay. A dashboard card or an automation that used the switch has to
+  be changed.
+
+### Changed
+
+- README: writing a setting has now been seen working on a real E8. The switch-off
+  time was changed from 1 h to 4 h in Home Assistant, and the machine still reported
+  4 h when it was read again after a restart of Home Assistant (the settings are not
+  cached). The front panel lock is no longer listed among what has not been run on a
+  real machine.
+
 ## [0.5.2] - 2026-10-10
 
 ### Fixed
@@ -261,7 +288,8 @@ The behaviour of the integration is unchanged.
   status, problem and maintenance sensors and brew counters; opt-in brew buttons
   with the factory recipes; diagnostics; English and German translations.
 
-[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.4.1...v0.5.0

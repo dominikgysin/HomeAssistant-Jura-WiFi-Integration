@@ -441,20 +441,16 @@ PREDICTIVE_FIELDS = {
     "Decalc": "descale",
     "FilterChange": "filter_change",
 }
-LOCK_COMMANDS = frozenset({"@TS:01", "@TS:00"})
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ProfileExtras:
     """What the XML of a machine declares and the library does not expose.
 
-    ``front_panel_lock`` says that the machine declares the commands to lock and
-    release its front panel (the banks ``Remote Screen`` and ``Release Keys``).
     ``predictive_thresholds`` maps the field of a maintenance percent to the percent
     at which the J.O.E. app recommends the maintenance.
     """
 
-    front_panel_lock: bool = False
     predictive_thresholds: Mapping[str, int] = dataclasses.field(default_factory=dict)
 
 
@@ -474,10 +470,6 @@ def load_profile_extras(profile: MachineProfile) -> ProfileExtras:
     except (OSError, ValueError, ET.ParseError) as err:
         _LOGGER.debug("Could not read the XML of %s: %s", profile.code, err)
         return ProfileExtras()
-    commands = {
-        (bank.get("Command") or "").strip().upper()
-        for bank in root.findall(".//{*}STATISTIC/{*}BANK")
-    }
     thresholds: dict[str, int] = {}
     for button in root.findall(".//{*}PREDICTIVEMAINTENANCE/{*}PREDICTIVEBUTTON"):
         field = PREDICTIVE_FIELDS.get(button.get("Process") or button.get("Name") or "")
@@ -487,10 +479,7 @@ def load_profile_extras(profile: MachineProfile) -> ProfileExtras:
             continue
         if field is not None:
             thresholds[field] = threshold
-    return ProfileExtras(
-        front_panel_lock=commands >= LOCK_COMMANDS,
-        predictive_thresholds=thresholds,
-    )
+    return ProfileExtras(predictive_thresholds=thresholds)
 
 
 class _SessionGate:
@@ -731,9 +720,9 @@ class JuraWifiClient:
         """Write one machine setting and return the value the machine reports for it.
 
         ``value`` is the value of the setting in the wire format of the machine. The
-        library locks the front panel for the write, checks the checksum of the
-        request and reads the setting back; it raises if the machine did not store
-        the value.
+        library sends the write between ``@TS:01`` and ``@TS:00``, checks the checksum
+        of the request and reads the setting back; it raises if the machine did not
+        store the value.
         """
         with self._gate.session():
             client = self._open()
@@ -756,23 +745,6 @@ class JuraWifiClient:
         if reply.strip().lower().startswith("@an:error"):
             raise JuraWifiError(f"machine refused the setting ({reply!r})")
         return (stored or value).upper()
-
-    def set_front_panel_lock(self, locked: bool) -> None:
-        """Lock the front panel of the machine, or release it again."""
-        with self._gate.session():
-            client = self._open()
-            try:
-                reply = client.lock_screen() if locked else client.unlock_screen()
-            except TimeoutError as err:
-                raise JuraWifiError(
-                    "the machine did not answer the lock request"
-                ) from err
-            except OSError as err:
-                raise JuraWifiConnectionError(str(err) or type(err).__name__) from err
-            finally:
-                client.close()
-        if reply.strip().lower().startswith("@an:error"):
-            raise JuraWifiError(f"machine refused the request ({reply!r})")
 
     def _stored_recipe(self, client: JuraClient, product: str) -> dict[str, int]:
         """Read the recipe the machine has stored for a drink, as ``brew`` arguments.

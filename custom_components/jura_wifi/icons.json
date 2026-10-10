@@ -59,13 +59,7 @@
     },
     "switch": {
       "setting_quality_assistant": { "default": "mdi:shield-check-outline" },
-      "setting_other": { "default": "mdi:cog-outline" },
-      "front_panel_lock": {
-        "default": "mdi:lock-open-variant-outline",
-        "state": {
-          "on": "mdi:lock-outline"
-        }
-      }
+      "setting_other": { "default": "mdi:cog-outline" }
     }
   },
   "services": {

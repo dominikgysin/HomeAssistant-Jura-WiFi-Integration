@@ -68,7 +68,3 @@ STORAGE_VERSION = 1
 # Seconds to wait before the cache is written after a poll; polls that come in
 # meanwhile do not move the write.
 CACHE_SAVE_DELAY = 300
-
-# The alerts that tell the front panel of the machine is locked: its keys are
-# locked, or the display is under remote control.
-LOCK_ALERTS = frozenset({"locked_keys", "remote_screen"})

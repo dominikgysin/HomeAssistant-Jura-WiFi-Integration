@@ -73,7 +73,6 @@ def test_every_error_the_code_raises_is_translated() -> None:
         "maintenance_failed",
         "cancel_failed",
         "setting_failed",
-        "lock_failed",
         "not_a_brew_button",
         "brew_option_unsupported",
         "brew_option_range",
@@ -92,7 +91,6 @@ def test_every_message_has_the_placeholders_that_the_code_fills() -> None:
         "brew_option_step": {"product", "option", "minimum", "step"},
         "brew_option_choice": {"product", "option", "allowed"},
         "setting_failed": {"setting", "error"},
-        "lock_failed": {"error"},
         "not_a_brew_button": set(),
     }
     for language in LANGUAGES:
@@ -243,7 +241,6 @@ def test_every_new_entity_has_a_name_in_every_language() -> None:
     """The entities of the machine settings and the new alerts are named."""
     for language in LANGUAGES:
         entity = _load(f"translations/{language}.json")["entity"]
-        assert entity["switch"]["front_panel_lock"]["name"]
         for key in (
             "system_fill_needed",
             "tap_open",
@@ -299,7 +296,6 @@ def test_the_icons_of_the_new_entities() -> None:
     icons = _load("icons.json")["entity"]
     for key in ("filter_detected", "keys_locked", "remote_screen_active"):
         assert icons["binary_sensor"][key]["default"], key
-    assert icons["switch"]["front_panel_lock"]["state"]["on"]
     assert icons["number"]["setting_hardness"]["default"]
     assert {
         "setting_auto_off",
@@ -308,6 +304,15 @@ def test_the_icons_of_the_new_entities() -> None:
         "setting_brewing_mode",
     } <= set(icons["select"])
     assert "setting_quality_assistant" in icons["switch"]
+
+
+def test_nothing_is_left_of_the_front_panel_lock() -> None:
+    """0.5.3 removed the switch; its name, icon and error message went with it."""
+    for language in LANGUAGES:
+        translations = _load(f"translations/{language}.json")
+        assert "front_panel_lock" not in translations["entity"]["switch"], language
+        assert "lock_failed" not in translations["exceptions"], language
+    assert "front_panel_lock" not in _load("icons.json")["entity"]["switch"]
 
 
 def test_the_last_seen_sensor_left_no_name_and_no_icon_behind() -> None:

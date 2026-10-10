@@ -1,10 +1,10 @@
-"""The machine settings and the lock of the front panel."""
+"""The machine settings, and the front panel lock that 0.5.3 removed."""
 
 from __future__ import annotations
 
 import dataclasses
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 from jura_connect import load_profile
 import pytest
@@ -17,7 +17,6 @@ from custom_components.jura_wifi.api import (
     JuraWifiError,
     MachineActivity,
     MachineSnapshot,
-    ProfileExtras,
 )
 from custom_components.jura_wifi.const import (
     CONF_ENABLE_SETTINGS,
@@ -30,6 +29,7 @@ from custom_components.jura_wifi.settings import (
     stored_item,
     stored_number,
 )
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import (
     STATE_OFF,
     STATE_ON,
@@ -59,25 +59,23 @@ SETTING_KEYS = {
         "setting_language",
         "setting_brewing_mode",
     },
-    "switch": {"setting_quality_assistant", "front_panel_lock"},
+    "switch": {"setting_quality_assistant"},
 }
 
 
 class FakeMachine:
-    """The settings and the lock of a machine, read and written like the client does."""
+    """The settings of a machine, read and written like the client does."""
 
     def __init__(self, settings: dict[str, str]) -> None:
         """Start with the settings that the machine has stored."""
         self.settings = dict(settings)
         self.writes: list[tuple[str, str]] = []
-        self.locked = False
 
     def fetch(self, with_settings: bool = False) -> MachineSnapshot:
         """Answer a poll; the settings only when they are asked for."""
-        alerts = {"coffee_ready"} | ({"locked_keys"} if self.locked else set())
         return dataclasses.replace(
             SNAPSHOT,
-            active_alerts=frozenset(alerts),
+            active_alerts=frozenset({"coffee_ready"}),
             settings=dict(self.settings) if with_settings else None,
         )
 
@@ -87,10 +85,6 @@ class FakeMachine:
         self.settings[p_argument] = value[2:] if len(value) > 2 else value
         return self.settings[p_argument]
 
-    def set_front_panel_lock(self, locked: bool) -> None:
-        """Lock or release the keys."""
-        self.locked = locked
-
 
 @pytest.fixture
 def machine(mock_client: MagicMock) -> FakeMachine:
@@ -98,7 +92,6 @@ def machine(mock_client: MagicMock) -> FakeMachine:
     fake = FakeMachine(E8_SETTINGS)
     mock_client.fetch.side_effect = fake.fetch
     mock_client.write_setting.side_effect = fake.write_setting
-    mock_client.set_front_panel_lock.side_effect = fake.set_front_panel_lock
     return fake
 
 
@@ -139,7 +132,7 @@ async def test_the_settings_of_the_e8_become_entities(
     machine: FakeMachine,
     mock_config_entry: MockConfigEntry,
 ) -> None:
-    """Only what the profile declares: six settings and the lock of the front panel."""
+    """Only what the profile declares: the six settings of the E8."""
     await _with_settings(hass, mock_config_entry)
 
     registry = er.async_get(hass)
@@ -548,7 +541,7 @@ async def test_a_machine_gets_only_the_settings_its_profile_declares(
         "setting_language",
         "setting_auto_off",
     }
-    assert registered_keys(hass, mock_config_entry, "switch") == {"front_panel_lock"}
+    assert registered_keys(hass, mock_config_entry, "switch") == set()
 
 
 async def test_a_hardness_with_steps_is_a_named_select(
@@ -599,9 +592,8 @@ async def test_a_machine_without_settings_reads_none(
     await _with_settings(hass, mock_config_entry)
     await poll(hass, freezer)
 
-    for platform in ("number", "select"):
+    for platform in ("number", "select", "switch"):
         assert registered_keys(hass, mock_config_entry, platform) == set()
-    assert registered_keys(hass, mock_config_entry, "switch") == {"front_panel_lock"}
     assert _reads(mock_client) == [False, False]
 
 
@@ -651,223 +643,61 @@ async def test_switching_the_option_on_adds_the_entities(
     )
 
 
-# The lock of the front panel
+# The front panel lock of 0.5.0 to 0.5.2. On a real E8 the keys stayed usable and the
+# machine never reported them as locked, so 0.5.3 removed the switch.
 
 
-async def test_the_lock_follows_the_alerts(
+@pytest.mark.parametrize("reachable", [True, False])
+@pytest.mark.parametrize("settings", [True, False])
+@pytest.mark.parametrize("disabled_by", [None, er.RegistryEntryDisabler.USER])
+async def test_the_front_panel_lock_of_0_5_2_is_removed_at_setup(
     hass: HomeAssistant,
     mock_client: MagicMock,
     machine: FakeMachine,
     mock_config_entry: MockConfigEntry,
-    freezer,
+    reachable: bool,
+    settings: bool,
+    disabled_by: er.RegistryEntryDisabler | None,
 ) -> None:
-    """The keys are locked, or the display is under remote control."""
-    await _with_settings(hass, mock_config_entry)
-    assert (
-        state(hass, "switch", mock_config_entry, "front_panel_lock").state == STATE_OFF
-    )
+    """The switch leaves the registry with the machine settings on or off.
 
-    for alert in ("locked_keys", "remote_screen"):
-        mock_client.fetch.side_effect = None
-        mock_client.fetch.return_value = dataclasses.replace(
-            SNAPSHOT, active_alerts=frozenset({alert})
-        )
-        await poll(hass, freezer)
-        assert state(hass, "switch", mock_config_entry, "front_panel_lock").state == (
-            STATE_ON
-        ), alert
-
-    mock_client.fetch.return_value = SNAPSHOT
-    await poll(hass, freezer)
-    assert (
-        state(hass, "switch", mock_config_entry, "front_panel_lock").state == STATE_OFF
-    )
-
-
-async def test_locking_and_releasing_the_front_panel(
-    hass: HomeAssistant,
-    mock_client: MagicMock,
-    machine: FakeMachine,
-    mock_config_entry: MockConfigEntry,
-) -> None:
-    """The commands reach the client, and the state is what the machine reports."""
-    await _with_settings(hass, mock_config_entry)
-    lock = entity_id(hass, "switch", mock_config_entry, "front_panel_lock")
-
-    await call(hass, "switch", "turn_on", lock)
-    await _settle(hass)
-    mock_client.set_front_panel_lock.assert_called_once_with(True)
-    assert (
-        state(hass, "switch", mock_config_entry, "front_panel_lock").state == STATE_ON
-    )
-
-    await call(hass, "switch", "turn_off", lock)
-    await _settle(hass)
-    assert mock_client.set_front_panel_lock.call_args_list[-1].args == (False,)
-    assert (
-        state(hass, "switch", mock_config_entry, "front_panel_lock").state == STATE_OFF
-    )
-
-
-async def test_the_lock_shows_what_was_asked_until_the_machine_reports(
-    hass: HomeAssistant,
-    mock_client: MagicMock,
-    machine: FakeMachine,
-    mock_config_entry: MockConfigEntry,
-) -> None:
-    """Right after the command the switch does not flip back for a moment."""
-    await _with_settings(hass, mock_config_entry)
-    coordinator = mock_config_entry.runtime_data
-    # hold back the check that follows the command
-    coordinator.async_request_refresh = AsyncMock()
-    lock = entity_id(hass, "switch", mock_config_entry, "front_panel_lock")
-
-    await call(hass, "switch", "turn_on", lock)
-
-    assert (
-        state(hass, "switch", mock_config_entry, "front_panel_lock").state == STATE_ON
-    )
-
-
-async def test_a_command_the_lock_cannot_send_is_reported(
-    hass: HomeAssistant,
-    mock_client: MagicMock,
-    machine: FakeMachine,
-    mock_config_entry: MockConfigEntry,
-) -> None:
-    """The state stays what the machine reported."""
-    await _with_settings(hass, mock_config_entry)
-    mock_client.set_front_panel_lock.side_effect = JuraWifiError("no answer")
-
-    with pytest.raises(HomeAssistantError, match="no answer"):
-        await call(
-            hass,
-            "switch",
-            "turn_on",
-            entity_id(hass, "switch", mock_config_entry, "front_panel_lock"),
-        )
-
-    assert (
-        state(hass, "switch", mock_config_entry, "front_panel_lock").state == STATE_OFF
-    )
-
-
-async def test_the_lock_needs_an_idle_machine(
-    hass: HomeAssistant,
-    mock_client: MagicMock,
-    machine: FakeMachine,
-    mock_config_entry: MockConfigEntry,
-    freezer,
-) -> None:
-    """A machine that is brewing is not locked."""
-    await _with_settings(hass, mock_config_entry)
-    mock_client.fetch.side_effect = JuraWifiBusy(MachineActivity("brewing", "coffee"))
-    await poll(hass, freezer)
-
-    with pytest.raises(ServiceValidationError):
-        await call(
-            hass,
-            "switch",
-            "turn_on",
-            entity_id(hass, "switch", mock_config_entry, "front_panel_lock"),
-        )
-
-    mock_client.set_front_panel_lock.assert_not_called()
-
-
-async def test_the_front_panel_can_be_released_while_the_machine_is_busy(
-    hass: HomeAssistant,
-    mock_client: MagicMock,
-    machine: FakeMachine,
-    mock_config_entry: MockConfigEntry,
-    freezer,
-) -> None:
-    """The keys can always be given back while the machine answers.
-
-    While the machine is busy its alerts are those of the poll before, so the switch
-    shows the release until a poll reads the alerts again.
+    Enabled or disabled, and also while the machine is switched off; the switches of
+    the settings stay.
     """
-    machine.locked = True
-    await _with_settings(hass, mock_config_entry)
-    lock = entity_id(hass, "switch", mock_config_entry, "front_panel_lock")
-    assert hass.states.get(lock).state == STATE_ON
-    mock_client.fetch.side_effect = JuraWifiBusy(MachineActivity("brewing", "coffee"))
-    await poll(hass, freezer)
-    assert state(hass, "sensor", mock_config_entry, "status").state == "brewing"
-
-    await call(hass, "switch", "turn_off", lock)
-    await _settle(hass)
-
-    mock_client.set_front_panel_lock.assert_called_once_with(False)
-    assert not machine.locked
-    assert hass.states.get(lock).state == STATE_OFF
-    # the polls while the machine is busy do not bring back the alerts of before
-    await poll(hass, freezer, seconds=16)
-    assert hass.states.get(lock).state == STATE_OFF
-
-    mock_client.fetch.side_effect = machine.fetch
-    await poll(hass, freezer, seconds=16)
-    assert state(hass, "sensor", mock_config_entry, "status").state == "ready"
-    assert hass.states.get(lock).state == STATE_OFF
-
-
-async def test_the_lock_needs_the_machine_to_be_reachable(
-    hass: HomeAssistant,
-    mock_client: MagicMock,
-    machine: FakeMachine,
-    mock_config_entry: MockConfigEntry,
-) -> None:
-    """Nothing is sent to a machine that is off."""
-    mock_client.fetch.side_effect = JuraWifiConnectionError("down")
-    await _with_settings(hass, mock_config_entry)
-
-    assert state(hass, "switch", mock_config_entry, "front_panel_lock").state == (
-        STATE_UNAVAILABLE
+    entry = mock_config_entry
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    old = registry.async_get_or_create(
+        "switch",
+        DOMAIN,
+        f"{entry.entry_id}_front_panel_lock",
+        config_entry=entry,
+        disabled_by=disabled_by,
+        suggested_object_id="jura_e8_sds_front_panel_lock",
     )
-    for locked in (True, False):
-        with pytest.raises(HomeAssistantError):
-            await mock_config_entry.runtime_data.async_set_front_panel_lock(locked)
-    mock_client.set_front_panel_lock.assert_not_called()
+    if disabled_by is None:
+        # what Home Assistant shows for a registered entity that nothing provides
+        hass.states.async_set(old.entity_id, STATE_UNAVAILABLE, {"restored": True})
+    if not reachable:
+        mock_client.fetch.side_effect = JuraWifiConnectionError("down")
 
+    await setup_with_options(hass, entry, **{CONF_ENABLE_SETTINGS: settings})
 
-async def test_no_lock_when_the_profile_does_not_declare_the_commands(
-    hass: HomeAssistant,
-    mock_client: MagicMock,
-    machine: FakeMachine,
-    mock_config_entry: MockConfigEntry,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The machine has to declare the banks that lock and release the keys."""
-    monkeypatch.setattr(
-        "custom_components.jura_wifi.coordinator.load_profile_extras",
-        lambda profile: ProfileExtras(front_panel_lock=False),
+    assert entry.state is ConfigEntryState.LOADED
+    assert registry.async_get(old.entity_id) is None
+    assert hass.states.get(old.entity_id) is None
+    for platform, keys in SETTING_KEYS.items():
+        assert registered_keys(hass, entry, platform) == (keys if settings else set())
+    # the alerts that the switch showed are still there as binary sensors
+    assert {"keys_locked", "remote_screen_active"} <= registered_keys(
+        hass, entry, "binary_sensor"
     )
-    await _with_settings(hass, mock_config_entry)
 
-    assert registered_keys(hass, mock_config_entry, "switch") == {
-        "setting_quality_assistant"
-    }
-
-
-async def test_no_lock_without_an_alert_to_show_its_state(
-    hass: HomeAssistant,
-    mock_client: MagicMock,
-    machine: FakeMachine,
-    mock_config_entry: MockConfigEntry,
-) -> None:
-    """The state comes from the alerts, so one of them has to exist."""
-    profile = load_profile("EF1120")
-    mock_client.profile = dataclasses.replace(
-        profile,
-        alerts=tuple(
-            alert
-            for alert in profile.alerts
-            if alert.name not in {"locked_keys", "remote_screen"}
-        ),
-    )
-    await _with_settings(hass, mock_config_entry)
-
-    assert "front_panel_lock" not in registered_keys(hass, mock_config_entry, "switch")
+    # the next setup does not bring it back
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+    assert "front_panel_lock" not in registered_keys(hass, entry, "switch")
 
 
 # How the values of a setting are read and written

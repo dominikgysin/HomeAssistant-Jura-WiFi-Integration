@@ -1028,45 +1028,6 @@ def test_a_setting_the_machine_refuses_is_reported(fake: MagicMock) -> None:
         _client().write_setting("02", "0F")
 
 
-@pytest.mark.parametrize(
-    ("locked", "method"), [(True, "lock_screen"), (False, "unlock_screen")]
-)
-def test_set_front_panel_lock(fake: MagicMock, locked: bool, method: str) -> None:
-    """The lock and the release are two commands of the library."""
-    getattr(fake, method).return_value = "@ts"
-
-    _client().set_front_panel_lock(locked)
-
-    getattr(fake, method).assert_called_once_with()
-    fake.close.assert_called_once()
-
-
-@pytest.mark.parametrize(
-    ("failure", "expected"),
-    [
-        (TimeoutError("no reply to '@TS:01'"), JuraWifiError),
-        (ConnectionResetError("reset by peer"), JuraWifiConnectionError),
-    ],
-)
-def test_front_panel_lock_failures(
-    fake: MagicMock, failure: Exception, expected: type[Exception]
-) -> None:
-    """Silence is a failed command, a lost session an outage."""
-    fake.lock_screen.side_effect = failure
-    with pytest.raises(expected) as err:
-        _client().set_front_panel_lock(True)
-    if expected is JuraWifiError:
-        assert not isinstance(err.value, JuraWifiConnectionError)
-    fake.close.assert_called_once()
-
-
-def test_a_refused_front_panel_lock_is_reported(fake: MagicMock) -> None:
-    """An @an:error reply means that the machine did not lock."""
-    fake.lock_screen.return_value = "@an:error"
-    with pytest.raises(JuraWifiError, match="refused"):
-        _client().set_front_panel_lock(True)
-
-
 def test_brew_options_replace_the_stored_recipe(fake: MagicMock) -> None:
     """Only what is given changes; the rest is what the machine has stored."""
     fake.read_pmode_product.return_value = _stored(
@@ -1201,9 +1162,8 @@ def test_the_limits_of_a_drink_are_accepted() -> None:
 
 
 def test_the_profile_extras_of_the_e8() -> None:
-    """The E8 declares the lock banks and the predictive maintenance at 80 percent."""
+    """The E8 declares the predictive maintenance at 80 percent."""
     extras = load_profile_extras(load_profile("EF1120"))
-    assert extras.front_panel_lock is True
     assert extras.predictive_thresholds == {
         "cleaning": 80,
         "descale": 80,
@@ -1220,7 +1180,6 @@ def test_the_profile_extras_of_a_machine_without_predictive_maintenance() -> Non
     )
     extras = load_profile_extras(profile)
     assert extras.predictive_thresholds == {}
-    assert extras.front_panel_lock is True
 
 
 def test_the_profile_extras_survive_an_xml_that_cannot_be_read() -> None:

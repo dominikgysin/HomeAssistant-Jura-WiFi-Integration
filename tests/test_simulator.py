@@ -395,8 +395,9 @@ async def test_the_integration_controls_the_simulated_machine(
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
-# The machine settings, the lock of the front panel and brewing with parameters,
-# as they reach the machine. The real machine has not been asked any of this yet.
+# The machine settings and brewing with parameters, as they reach the machine. On a
+# real E8 the settings have been read and the switch-off time written; brewing with
+# parameters has only been run here.
 
 
 def test_the_settings_are_read_in_the_session_of_the_poll(
@@ -457,23 +458,6 @@ def test_the_switch_off_time_is_written_with_its_marker_bytes(
 
     assert _commands(simulator)[1] == "@TM:13,213C96"
     assert simulator.config.settings["13"] == "213C"
-
-
-def test_the_front_panel_is_locked_and_released(
-    machine: Callable[..., Simulator],
-) -> None:
-    """The commands of the Remote Screen and Release Keys banks."""
-    simulator = machine()
-    client = _paired(simulator)
-    _commands(simulator)
-
-    client.set_front_panel_lock(True)
-    assert _commands(simulator) == ["@TS:01"]
-    assert simulator.config.screen_locked is True
-
-    client.set_front_panel_lock(False)
-    assert _commands(simulator) == ["@TS:00"]
-    assert simulator.config.screen_locked is False
 
 
 @pytest.mark.parametrize(
@@ -587,7 +571,7 @@ async def test_the_integration_changes_the_settings_of_the_simulated_machine(
     machine: Callable[..., Simulator],
     mock_config_entry: MockConfigEntry,
 ) -> None:
-    """Read the settings, change one of each kind, lock the panel and brew."""
+    """Read the settings, change one of each kind and brew."""
     simulator = machine(
         settings=dict(E8_SETTINGS), allow_brew=True, pmode_products=dict(STORED)
     )
@@ -602,7 +586,6 @@ async def test_the_integration_changes_the_settings_of_the_simulated_machine(
     assert state(hass, "select", entry, "setting_auto_off").state == "30min"
     assert state(hass, "select", entry, "setting_language").state == "english"
     assert state(hass, "switch", entry, "setting_quality_assistant").state == "on"
-    assert state(hass, "switch", entry, "front_panel_lock").state == "off"
     _commands(simulator)
 
     await call(
@@ -636,12 +619,6 @@ async def test_the_integration_changes_the_settings_of_the_simulated_machine(
     await hass.async_block_till_done(wait_background_tasks=True)
     assert simulator.config.settings["7E"] == "00"
     assert state(hass, "switch", entry, "setting_quality_assistant").state == "off"
-
-    await call(
-        hass, "switch", "turn_on", entity_id(hass, "switch", entry, "front_panel_lock")
-    )
-    await hass.async_block_till_done(wait_background_tasks=True)
-    assert simulator.config.screen_locked is True
 
     await call(
         hass,

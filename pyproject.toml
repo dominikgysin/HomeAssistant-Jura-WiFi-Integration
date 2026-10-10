@@ -1,6 +1,6 @@
 [project]
 name = "jura-wifi-ha"
-version = "0.5.2"
+version = "0.5.3"
 description = "Home Assistant integration for JURA machines with a Wi-Fi Connect dongle"
 requires-python = ">=3.13"
 

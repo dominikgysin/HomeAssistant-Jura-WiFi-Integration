@@ -10,7 +10,7 @@ cloud, no JURA account.
 
 It reads the state, the counters and the maintenance needs of the machine, and
 it can brew your drinks and start the maintenance programs. Optionally it also
-shows and changes the settings of the machine and locks its front panel.
+shows and changes the settings of the machine.
 
 It is built on the reverse-engineered
 [`jura-connect`](https://github.com/makefu/jura-connect) library (MIT), which
@@ -23,9 +23,9 @@ with JURA. The logo is an original drawing and not related to any JURA logo.
 | --- | --- |
 | JURA E8 (SDS) with Wi-Fi Connect V2 | pairing, status, counters, maintenance values and the stored drink recipes verified on a real machine (read-only), also while the machine is in energy-saving mode |
 | Home Assistant side (config flow, entities, offline handling, cache of the last values) | automated tests pass on Home Assistant 2025.10 and 2026.10; the integration runs in a Home Assistant against the real E8 |
-| Seen working on the real E8 with 0.5.0 and 0.5.1 | a counter for every product the machine reports, the double drinks included (together they make up the total of the machine); polling every 15 s while the machine is active (the status was back to `ready` one poll after a drink); the last counters and maintenance values after a restart while the machine was off, with `last_seen` on the status; filter wear *unavailable* on a machine that does not report it; the status `programming` while the menu of the machine was open; going offline when the machine switched itself off and online again when it was switched on, without an error; the six settings read from the machine |
+| Seen working on the real E8 with 0.5.0 and 0.5.1 | a counter for every product the machine reports, the double drinks included (together they make up the total of the machine); polling every 15 s while the machine is active (the status was back to `ready` one poll after a drink); the last counters and maintenance values after a restart while the machine was off, with `last_seen` on the status; filter wear *unavailable* on a machine that does not report it; the status `programming` while the menu of the machine was open; going offline when the machine switched itself off and online again when it was switched on, without an error; the six settings read from the machine; writing a setting: the switch-off time was changed from 1 h to 4 h in Home Assistant, and the machine still reported 4 h when it was read again after a restart of Home Assistant (the other settings are written with the same command) |
 | Brew buttons, maintenance programs, cancel | the commands are tested end to end against the dongle simulator of the library (real protocol over TCP). On a real E8 (SDS) the **brew button (Coffee)**, the **milk system rinse** and the **coffee system rinse** were run through this integration on 2026-10-09: each press was followed by machine activity and counter changes. The other drinks use the same command. Cleaning, descaling, filter change, milk system cleaning and cancel were **not yet run on a real machine** |
-| Writing machine settings, front panel lock (also releasing it while the machine is busy), brew with parameters, the status `switching_off` | covered by the library simulator only (real protocol over TCP) and **not yet run on a real machine**. The settings and the lock are off by default. When the real E8 switched itself off with 0.5.x, it went from energy saving straight to offline, without `switching_off` |
+| Brew with parameters, the status `switching_off` | covered by the library simulator only (real protocol over TCP) and **not yet run on a real machine**. When the real E8 switched itself off with 0.5.x, it went from energy saving straight to offline, without `switching_off` |
 | Setup step for the area and the options (new in 0.5.0) | covered by the automated tests on both Home Assistant versions; not yet run in a real setup |
 | Busy machine (menu, brewing, maintenance program) | the machine then pushes progress frames instead of status frames; seen on the real E8 as `brewing` and `programming`, and covered by tests using one frame captured from a real E8 in its menu |
 | Model detection, and filling in entries of older versions | article number, firmware, production date and machine number announced by UDP broadcast (same network as the dongle only), article number or model list as fallback. The UDP part is verified on a real E8: an entry of 0.1.0 got its article number, firmware and model from it. The serial number is made of the production date and the machine number, as on the type plate; this was checked against the type plate of one E8 |
@@ -101,7 +101,6 @@ Home Assistant configuration and restart Home Assistant.
 | Maintenance buttons | one per maintenance program of the machine and one for the coffee system rinse, only if enabled in the options; in the configuration section of the device |
 | Cancel button | only together with one of the two sets above |
 | Machine settings (number, select, switch) | one per setting the machine profile declares, only if *Machine settings* is enabled in the options; in the configuration section of the device, see [Machine settings](#machine-settings) |
-| Front panel lock (switch) | only if *Machine settings* is enabled and the profile declares the commands, see [Front panel lock](#front-panel-lock) |
 
 Entities are created from the machine profile, so only what your model supports
 shows up.
@@ -222,22 +221,24 @@ profile declares.
   showing its menu Home Assistant refuses the change and says why.
 - The values are not kept over a restart. While the machine is off the entities
   are unavailable.
-- Reading the settings works on a real E8. Writing them has only been run against
-  the simulator of the library, not yet on a real machine, see [Status](#status).
-  Try a change that is easy to undo first and look at the display of the machine.
+- Reading and writing the settings works on a real E8: the switch-off time was
+  changed from 1 hour to 4 hours, and the machine still reported 4 hours when it
+  was read again after a restart of Home Assistant. The other settings are written
+  with the same command, see [Status](#status). Try a change that is easy to undo
+  first and look at the display of the machine.
 
-### Front panel lock
+### No front panel lock
 
-With **Machine settings** a switch **Front panel lock** locks the keys of the
-machine and releases them again. It is only offered if the profile of the
-machine declares the commands for it (the E8 does, as *Remote Screen* and
-*Release Keys*) and the alerts that report the state. The state is what the
-machine reports with its alerts *keys locked* and *remote screen*; right after a
-command the switch shows what was asked for, until the check that follows has
-the answer of the machine. Locking needs the machine to be on and idle. The keys
-can be released whenever the machine answers, also while it brews or runs a
-program; it does not report its alerts meanwhile, so the switch shows the release
-until the machine is idle again. The lock has not been run on a real machine yet.
+Up to 0.5.2 *Machine settings* also added a switch **Front panel lock**. It sent
+the two commands that the profile of the E8 calls *Remote Screen* and *Release
+Keys*. On a real E8 the machine accepted the command, but its keys stayed usable
+and it never reported the alerts *keys locked* or *remote screen*, so the switch
+went back to off at the next poll. The profile lists the two commands as the first
+and the last step of reading the statistics of the machine. That looks like a short
+hold while the J.O.E. app reads the counters, not like a lasting lock (an
+interpretation of the profile, not verified). 0.5.3 removed the switch, and the
+update removes its entity from Home Assistant. The binary sensors *keys locked* and
+*remote screen active* stay.
 
 ## Examples
 
@@ -355,8 +356,7 @@ for the cleaning. The same works for descaling and the filter change.
   programming menu** it does not send its status, only what it is doing. The
   status then shows `brewing`, `maintenance` or `programming`, all other
   entities keep the values of the last full poll, and the buttons refuse to
-  start something else (the cancel button and the release of the front panel
-  lock still work).
+  start something else (the cancel button still works).
 - **A short drink or rinse may not show in the status.** While the machine is
   idle it is polled at the update interval, and every 15 s only once it was seen
   busy, so what starts and ends between two polls never shows as `brewing` or

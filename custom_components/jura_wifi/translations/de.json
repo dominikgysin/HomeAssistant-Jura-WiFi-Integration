@@ -55,7 +55,7 @@
           "scan_interval": "Sekunden zwischen zwei Abfragen. Der Stick akzeptiert nur eine Verbindung gleichzeitig, daher nicht zu niedrig wählen.",
           "enable_brewing": "Fügt pro Getränk eine Schaltfläche hinzu, die es mit dem auf der Maschine gespeicherten Rezept zubereitet, so wie am Display eingestellt. Vor dem Drücken eine Tasse unterstellen. Fügt auch eine Abbrechen-Schaltfläche hinzu und schaltet die Aktion Mit Optionen zubereiten frei.",
           "enable_maintenance": "Fügt Schaltflächen hinzu, die die Pflegeprogramme der Maschine starten (Reinigung, Entkalkung, Milchsystem spülen, Kaffeesystem spülen, ...). Die Bestätigungen fragt die Maschine danach auf ihrem Display ab; das Kaffeesystem wird sofort gespült, also eine Tasse unter den Auslauf stellen. Fügt auch eine Abbrechen-Schaltfläche hinzu.",
-          "enable_settings": "Fügt Entitäten für die Einstellungen der Maschine hinzu (Wasserhärte, Ausschaltzeit, Sprache, ...) und einen Schalter, der das Bedienfeld sperrt. Die Werte werden von der Maschine gelesen und auf sie geschrieben; eine Änderung braucht eine eingeschaltete, untätige Maschine."
+          "enable_settings": "Fügt Entitäten für die Einstellungen der Maschine hinzu (Wasserhärte, Ausschaltzeit, Sprache, ...). Die Werte werden von der Maschine gelesen und auf sie geschrieben; eine Änderung braucht eine eingeschaltete, untätige Maschine."
         }
       },
       "reauth_confirm": {
@@ -110,7 +110,7 @@
           "scan_interval": "Sekunden zwischen zwei Abfragen. Der Stick akzeptiert nur eine Verbindung gleichzeitig, daher nicht zu niedrig wählen.",
           "enable_brewing": "Fügt pro Getränk eine Schaltfläche hinzu, die es mit dem auf der Maschine gespeicherten Rezept zubereitet, so wie am Display eingestellt. Vor dem Drücken eine Tasse unterstellen. Fügt auch eine Abbrechen-Schaltfläche hinzu und schaltet die Aktion Mit Optionen zubereiten frei.",
           "enable_maintenance": "Fügt Schaltflächen hinzu, die die Pflegeprogramme der Maschine starten (Reinigung, Entkalkung, Milchsystem spülen, Kaffeesystem spülen, ...). Die Bestätigungen fragt die Maschine danach auf ihrem Display ab; das Kaffeesystem wird sofort gespült, also eine Tasse unter den Auslauf stellen. Fügt auch eine Abbrechen-Schaltfläche hinzu.",
-          "enable_settings": "Fügt Entitäten für die Einstellungen der Maschine hinzu (Wasserhärte, Ausschaltzeit, Sprache, ...) und einen Schalter, der das Bedienfeld sperrt. Die Werte werden von der Maschine gelesen und auf sie geschrieben; eine Änderung braucht eine eingeschaltete, untätige Maschine."
+          "enable_settings": "Fügt Entitäten für die Einstellungen der Maschine hinzu (Wasserhärte, Ausschaltzeit, Sprache, ...). Die Werte werden von der Maschine gelesen und auf sie geschrieben; eine Änderung braucht eine eingeschaltete, untätige Maschine."
         }
       }
     }
@@ -273,8 +273,7 @@
     },
     "switch": {
       "setting_quality_assistant": { "name": "Qualitätsassistent" },
-      "setting_other": { "name": "{setting}" },
-      "front_panel_lock": { "name": "Bedienfeld sperren" }
+      "setting_other": { "name": "{setting}" }
     }
   },
   "selector": {
@@ -348,9 +347,6 @@
     },
     "setting_failed": {
       "message": "{setting} konnte nicht geändert werden: {error}"
-    },
-    "lock_failed": {
-      "message": "Das Bedienfeld konnte nicht gesperrt oder freigegeben werden: {error}"
     },
     "not_a_brew_button": {
       "message": "Diese Aktion funktioniert nur bei den Zubereitungs-Schaltflächen."
