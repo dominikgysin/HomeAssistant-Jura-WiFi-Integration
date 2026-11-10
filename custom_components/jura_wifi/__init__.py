@@ -12,7 +12,12 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.service import async_register_platform_entity_service
 from homeassistant.helpers.typing import ConfigType
 
-from .api import BREW_OPTIONS, JuraWifiClient
+from .api import (
+    BREW_EXTRACTION,
+    BREW_OPTIONS,
+    EXTRACTION_PRESELECTIONS,
+    JuraWifiClient,
+)
 from .button import JuraWifiBrewButton
 from .const import (
     CONF_AUTH_HASH,
@@ -30,13 +35,18 @@ from .identity import machine_device
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-# The fields of the action are the recipe parameters of the brew options. Whether a
-# value fits the drink is checked against its profile when the action runs.
+# The fields of the action are the recipe parameters of the brew options and the
+# extraction. Whether a value fits the drink is checked against its profile when the
+# action runs.
 BREW_SCHEMA = {
     vol.Optional(option.key): (
         vol.All(cv.string, vol.Lower) if option.named else vol.Coerce(int)
     )
     for option in BREW_OPTIONS
+} | {
+    vol.Optional(BREW_EXTRACTION): vol.All(
+        cv.string, vol.Lower, vol.In(list(EXTRACTION_PRESELECTIONS))
+    )
 }
 
 
@@ -51,6 +61,8 @@ async def _async_brew(entity: Entity, call: ServiceCall) -> None:
         for option in BREW_OPTIONS
         if option.key in call.data
     }
+    if BREW_EXTRACTION in call.data:
+        options[BREW_EXTRACTION] = call.data[BREW_EXTRACTION]
     await entity.async_brew_with_options(options)
 
 

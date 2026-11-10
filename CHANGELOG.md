@@ -7,6 +7,16 @@ version may change behaviour.
 
 ## [Unreleased]
 
+### Added
+
+- **Cold extraction** for the action `jura_wifi.brew`: the new field `extraction`
+  (`hot` or `cold`) brews a drink with the cold brew preselection of the J.O.E. app,
+  for the drinks whose profile declares it (for example the coffee drinks of the Z10).
+  The machine setting *Brewing mode* does not apply to drinks started remotely, so a
+  Z10 brewed them hot. A cold drink takes no `temperature`; on machines of the old
+  protocol the stored temperature is left out, as the cold brew takes its place. The
+  encoding comes from the J.O.E. app and has not been run on a real machine yet.
+
 ## [0.5.3] - 2026-10-10
 
 ### Removed

@@ -150,6 +150,7 @@ button** of this integration; the drink is the one of the button. It needs the
 | `milk_foam_time` | seconds of milk foam |
 | `milk_break` | seconds of pause between the milk and the coffee |
 | `bypass` | ml of water that bypass the coffee, as for an Americano |
+| `extraction` | `hot` (the recipe as it is) or `cold` (cold extraction, *cold brew*) |
 
 All fields are optional. **Whatever is not given stays as stored on the
 machine.** Only the parameters that the profile of the machine defines for the
@@ -158,7 +159,19 @@ declares (an espresso takes 15 to 80 ml in steps of 5, for example); anything
 else is refused with a message that says what is allowed, before anything is
 sent to the machine. The guards are those of the buttons: the machine has to be
 online and idle and the drink must not be blocked by an alert. Double drinks and
-preselections are not supported.
+the other preselections (extra shot, light brew, sweet foam, ...) are not
+supported.
+
+`extraction: cold` brews the drink with the **cold extraction** (*cold brew*)
+preselection of the J.O.E. app, with the rest of the recipe as stored on the
+machine or as given. It is accepted only for the drinks whose profile declares
+cold brew, such as the coffee drinks of the Z10, and not together with
+`temperature`. The machine setting *Brewing mode* does not apply to drinks that
+are started remotely, so a cold drink needs this field. Machines with the newer
+protocol (the Z10 of type EF1106 among them) get the cold brew as a flag next to
+the recipe; older ones (EF545, ...) get it in place of the temperature. Both
+encodings come from the J.O.E. app and **have not been run on a real machine
+yet**.
 
 ```yaml
 action: jura_wifi.brew
@@ -169,6 +182,15 @@ data:
   water_amount: 60
   temperature: high
   milk_foam_time: 25
+```
+
+```yaml
+action: jura_wifi.brew
+target:
+  entity_id: button.jura_z10_brew_coffee
+data:
+  extraction: cold
+  water_amount: 70
 ```
 
 The entity ID depends on the name of your device. The action has not been run on

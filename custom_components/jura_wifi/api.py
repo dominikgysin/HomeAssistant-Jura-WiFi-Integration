@@ -110,6 +110,16 @@ BREW_OPTIONS: tuple[BrewOption, ...] = (
     BrewOption("bypass", KIND_BYPASS, "bypass"),
 )
 
+# The field of the brew action that chooses the extraction, and the preselections of
+# the J.O.E. app that each value stands for. ``hot`` is the recipe as it is; ``cold``
+# is the cold extraction (cold brew) that the Z10 offers for its coffee drinks. The
+# profile of the drink declares whether it can be brewed cold.
+BREW_EXTRACTION = "extraction"
+EXTRACTION_PRESELECTIONS: dict[str, tuple[str, ...]] = {
+    "hot": (),
+    "cold": ("coldbrew",),
+}
+
 ACTIVITY_BREWING = "brewing"
 ACTIVITY_MAINTENANCE = "maintenance"
 ACTIVITY_PROGRAMMING = "programming"
@@ -371,14 +381,16 @@ def recipe_from_stored(definition: ProductDef, stored: str) -> dict[str, int]:
 
 def brew_arguments(
     definition: ProductDef, options: Mapping[str, Any]
-) -> dict[str, int | str]:
+) -> dict[str, Any]:
     """Check the options of the brew action against the profile of the drink.
 
     Returns the arguments for ``JuraClient.brew``. Only the parameters that the
     profile defines for the drink are accepted, and only within the range, the step
-    or the items that it declares. Raises :class:`BrewOptionError` for anything else.
+    or the items that it declares. A cold extraction needs the drink to declare the
+    cold brew preselection, and takes no temperature. Raises
+    :class:`BrewOptionError` for anything else.
     """
-    arguments: dict[str, int | str] = {}
+    arguments: dict[str, Any] = {}
     for option in BREW_OPTIONS:
         if option.key not in options:
             continue
@@ -388,6 +400,30 @@ def brew_arguments(
         arguments[option.argument] = _checked_brew_value(
             option, param, options[option.key]
         )
+    if BREW_EXTRACTION in options:
+        extraction = str(options[BREW_EXTRACTION]).strip().lower()
+        if extraction not in EXTRACTION_PRESELECTIONS:
+            raise BrewOptionError(
+                "brew_option_choice",
+                option=BREW_EXTRACTION,
+                allowed=", ".join(EXTRACTION_PRESELECTIONS),
+            )
+        preselections = EXTRACTION_PRESELECTIONS[extraction]
+        if preselections:
+            if not set(preselections) <= definition.preselections:
+                raise BrewOptionError(
+                    "brew_extraction_unsupported",
+                    option=BREW_EXTRACTION,
+                    extraction=extraction,
+                )
+            if "temperature" in arguments:
+                # The cold extraction replaces the brewing temperature.
+                raise BrewOptionError(
+                    "brew_option_conflict",
+                    option="temperature",
+                    extraction=extraction,
+                )
+            arguments["preselections"] = preselections
     return arguments
 
 
@@ -746,7 +782,9 @@ class JuraWifiClient:
             raise JuraWifiError(f"machine refused the setting ({reply!r})")
         return (stored or value).upper()
 
-    def _stored_recipe(self, client: JuraClient, product: str) -> dict[str, int]:
+    def _stored_recipe(
+        self, client: JuraClient, product: str, preselections: Iterable[str] = ()
+    ) -> dict[str, int]:
         """Read the recipe the machine has stored for a drink, as ``brew`` arguments.
 
         The machine keeps one recipe per drink, including what the user changed at
@@ -754,6 +792,10 @@ class JuraWifiClient:
         profile marks as not programmable: the E8 answers for them as well. An
         empty dict means that the factory recipe of the profile is used: the
         machine does not hand its recipes out, or the answer was unusable.
+
+        On a machine of the old T protocol some ``preselections`` replace a byte of
+        the recipe (the cold extraction the temperature). The stored value of such
+        a parameter is left out, as the library refuses to have it replaced.
         """
         definition = next((p for p in self.profile.products if p.name == product), None)
         if definition is None:
@@ -767,22 +809,35 @@ class JuraWifiClient:
             return {}
         arguments = recipe_from_stored(definition, stored.blob)
         _LOGGER.debug("Recipe of %s stored on the machine: %s", product, arguments)
+        if preselections:
+            try:
+                plan = self.profile.plan_preselections(definition, preselections)
+            except ValueError:
+                # The library refuses the preselections again when it brews.
+                return arguments
+            replaced = {offset for offset, _ in plan.byte_overwrites}
+            for param in definition.params:
+                if param.offset in replaced:
+                    arguments.pop(BREW_ARGUMENT_BY_KIND.get(param.kind, ""), None)
         return arguments
 
-    def brew(
-        self, product: str, options: Mapping[str, int | str] | None = None
-    ) -> None:
+    def brew(self, product: str, options: Mapping[str, Any] | None = None) -> None:
         """Start a drink with the recipe that is stored on the machine.
 
         ``options`` are arguments for ``JuraClient.brew`` that replace the matching
         parameters of the stored recipe; everything else stays as the machine has it.
-        Falls back to the factory recipe of the profile if the machine does not
-        hand its recipes out.
+        ``preselections`` among them (the cold extraction) are applied to that
+        recipe. Falls back to the factory recipe of the profile if the machine does
+        not hand its recipes out.
         """
+        options = options or {}
         with self._gate.session():
             client = self._open()
             try:
-                arguments = {**self._stored_recipe(client, product), **(options or {})}
+                stored = self._stored_recipe(
+                    client, product, options.get("preselections", ())
+                )
+                arguments = {**stored, **options}
                 reply = client.brew(product, retry=True, **arguments)
             except TimeoutError as err:
                 raise JuraWifiError(

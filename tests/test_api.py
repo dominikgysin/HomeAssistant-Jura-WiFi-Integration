@@ -1063,6 +1063,8 @@ def test_every_option_of_the_brew_action_has_its_argument() -> None:
         "milk_break": "milk_break",
         "bypass": "bypass",
     }
+    assert api.BREW_EXTRACTION == "extraction"
+    assert api.EXTRACTION_PRESELECTIONS == {"hot": (), "cold": ("coldbrew",)}
 
 
 def test_the_options_of_a_drink_become_brew_arguments() -> None:
@@ -1159,6 +1161,103 @@ def test_the_limits_of_a_drink_are_accepted() -> None:
     assert brew_arguments(espresso, {"water_amount": 80})["ml"] == 80
     assert brew_arguments(espresso, {"strength": 1})["strength"] == 1
     assert brew_arguments(espresso, {"strength": 10})["strength"] == 10
+
+
+def _z10_product(name: str, code: str = "EF1106"):
+    return next(p for p in load_profile(code).products if p.name == name)
+
+
+def test_a_cold_extraction_is_the_cold_brew_preselection() -> None:
+    """The Z10 declares cold brew for its coffee drinks."""
+    arguments = brew_arguments(
+        _z10_product("coffee"), {"extraction": "Cold", "water_amount": 70}
+    )
+    assert arguments == {"ml": 70, "preselections": ("coldbrew",)}
+
+
+def test_a_hot_extraction_leaves_the_recipe_as_it_is() -> None:
+    """Hot is what the machine brews anyway."""
+    assert brew_arguments(_z10_product("coffee"), {"extraction": "hot"}) == {}
+    assert brew_arguments(_product("espresso"), {"extraction": "hot"}) == {}
+
+
+@pytest.mark.parametrize(
+    ("product", "options", "key", "placeholders"),
+    [
+        # the E8 has no cold brew at all
+        (
+            _product("espresso"),
+            {"extraction": "cold"},
+            "brew_extraction_unsupported",
+            {"option": "extraction", "extraction": "cold"},
+        ),
+        # the Z10 has no cold milk foam
+        (
+            _z10_product("milk_foam"),
+            {"extraction": "cold"},
+            "brew_extraction_unsupported",
+            {"option": "extraction", "extraction": "cold"},
+        ),
+        # a cold extraction is not heated
+        (
+            _z10_product("coffee"),
+            {"extraction": "cold", "temperature": "high"},
+            "brew_option_conflict",
+            {"option": "temperature", "extraction": "cold"},
+        ),
+        (
+            _z10_product("coffee"),
+            {"extraction": "lukewarm"},
+            "brew_option_choice",
+            {"option": "extraction", "allowed": "hot, cold"},
+        ),
+    ],
+)
+def test_a_cold_extraction_the_drink_does_not_allow_is_refused(
+    product, options: dict, key: str, placeholders: dict[str, str]
+) -> None:
+    """The profile of the drink decides whether it can be brewed cold."""
+    with pytest.raises(BrewOptionError) as err:
+        brew_arguments(product, options)
+    assert err.value.translation_key == key
+    assert err.value.placeholders == placeholders
+
+
+def _z10_client(code: str = "EF1106") -> JuraWifiClient:
+    return JuraWifiClient("192.0.2.10", 51515, "ha-1", "f" * 64, "", code)
+
+
+def test_a_cold_extraction_keeps_the_stored_recipe(fake: MagicMock) -> None:
+    """The Z10 sends the cold brew as a bit of the mask byte, the recipe stays."""
+    fake.read_pmode_product.return_value = _stored(
+        "coffee", "0300081C000002000100000000000000"
+    )
+
+    _z10_client().brew("coffee", {"preselections": ("coldbrew",)})
+
+    fake.brew.assert_called_once_with(
+        "coffee",
+        retry=True,
+        strength=8,
+        ml=140,
+        temperature=2,
+        preselections=("coldbrew",),
+    )
+
+
+def test_a_cold_extraction_replaces_the_stored_temperature_on_an_old_machine(
+    fake: MagicMock,
+) -> None:
+    """The old T protocol writes the cold brew over the temperature byte."""
+    fake.read_pmode_product.return_value = _stored(
+        "coffee", "0300081C000002000100000000000000"
+    )
+
+    _z10_client("EF545").brew("coffee", {"preselections": ("coldbrew",)})
+
+    fake.brew.assert_called_once_with(
+        "coffee", retry=True, strength=8, ml=140, preselections=("coldbrew",)
+    )
 
 
 def test_the_profile_extras_of_the_e8() -> None:
