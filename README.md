@@ -35,6 +35,12 @@ with JURA. The logo is an original drawing and not related to any JURA logo.
 
 Requires Home Assistant **2025.10 or newer**.
 
+What changed in each version is listed in the
+[changelog](https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/blob/main/CHANGELOG.md)
+and in the notes of the
+[releases](https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/releases).
+HACS and the Marketplace show these notes when they offer an update.
+
 ## Installation
 
 ### Marketplace or HACS (recommended)

@@ -7,6 +7,11 @@ version may change behaviour.
 
 ## [Unreleased]
 
+### Changed
+
+- README: below the required Home Assistant version, a line links the changelog and
+  the release notes, which HACS and the Marketplace show when they offer an update.
+
 ## [0.6.0] - 2026-11-13
 
 ### Added
