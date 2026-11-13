@@ -15,7 +15,9 @@ version may change behaviour.
   The machine setting *Brewing mode* does not apply to drinks started remotely, so a
   Z10 brewed them hot. A cold drink takes no `temperature`; on machines of the old
   protocol the stored temperature is left out, as the cold brew takes its place. The
-  encoding comes from the J.O.E. app and has not been run on a real machine yet.
+  encoding comes from the J.O.E. app. It was verified on a real Z10 (INTB, EF1106),
+  which brewed a cold latte macchiato; the encoding of the old protocol has not been
+  run on a real machine yet.
 
 ## [0.5.3] - 2026-10-10
 

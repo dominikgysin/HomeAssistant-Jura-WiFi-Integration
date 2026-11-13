@@ -25,6 +25,7 @@ with JURA. The logo is an original drawing and not related to any JURA logo.
 | Home Assistant side (config flow, entities, offline handling, cache of the last values) | automated tests pass on Home Assistant 2025.10 and 2026.10; the integration runs in a Home Assistant against the real E8 |
 | Seen working on the real E8 with 0.5.0 and 0.5.1 | a counter for every product the machine reports, the double drinks included (together they make up the total of the machine); polling every 15 s while the machine is active (the status was back to `ready` one poll after a drink); the last counters and maintenance values after a restart while the machine was off, with `last_seen` on the status; filter wear *unavailable* on a machine that does not report it; the status `programming` while the menu of the machine was open; going offline when the machine switched itself off and online again when it was switched on, without an error; the six settings read from the machine; writing a setting: the switch-off time was changed from 1 h to 4 h in Home Assistant, and the machine still reported 4 h when it was read again after a restart of Home Assistant (the other settings are written with the same command) |
 | Brew buttons, maintenance programs, cancel | the commands are tested end to end against the dongle simulator of the library (real protocol over TCP). On a real E8 (SDS) the **brew button (Coffee)**, the **milk system rinse** and the **coffee system rinse** were run through this integration on 2026-10-09: each press was followed by machine activity and counter changes. The other drinks use the same command. Cleaning, descaling, filter change, milk system cleaning and cancel were **not yet run on a real machine** |
+| Cold extraction (`extraction: cold`) | run on a real Z10 (INTB, EF1106) on 2026-11-11: a latte macchiato was brewed cold and the status showed `brewing` until it was done. Machines of the old protocol (EF545, ...) use a different encoding that is covered by the library simulator only |
 | Brew with parameters, the status `switching_off` | covered by the library simulator only (real protocol over TCP) and **not yet run on a real machine**. When the real E8 switched itself off with 0.5.x, it went from energy saving straight to offline, without `switching_off` |
 | Setup step for the area and the options (new in 0.5.0) | covered by the automated tests on both Home Assistant versions; not yet run in a real setup |
 | Busy machine (menu, brewing, maintenance program) | the machine then pushes progress frames instead of status frames; seen on the real E8 as `brewing` and `programming`, and covered by tests using one frame captured from a real E8 in its menu |
@@ -170,8 +171,10 @@ cold brew, such as the coffee drinks of the Z10, and not together with
 are started remotely, so a cold drink needs this field. Machines with the newer
 protocol (the Z10 of type EF1106 among them) get the cold brew as a flag next to
 the recipe; older ones (EF545, ...) get it in place of the temperature. Both
-encodings come from the J.O.E. app and **have not been run on a real machine
-yet**.
+encodings come from the J.O.E. app. The newer one was **verified on a real Z10
+(INTB, EF1106)** on 2026-11-11: a latte macchiato with `extraction: cold` was
+brewed cold, with the display of the machine in its cold brew colour. The older
+one has **not been run on a real machine yet**.
 
 ```yaml
 action: jura_wifi.brew
