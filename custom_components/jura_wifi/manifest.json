@@ -1,6 +1,7 @@
 {
   "domain": "jura_wifi",
   "name": "JURA Wi-Fi Connect",
+  "categories": ["appliances_cleaning.cooking"],
   "codeowners": ["@dominikgysin"],
   "config_flow": true,
   "documentation": "https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration",
@@ -9,5 +10,5 @@
   "issue_tracker": "https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/issues",
   "loggers": ["jura_connect"],
   "requirements": ["jura-connect==0.14.0"],
-  "version": "0.5.3"
+  "version": "0.6.0"
 }

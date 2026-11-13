@@ -22,11 +22,12 @@ with JURA. The logo is an original drawing and not related to any JURA logo.
 | Area | State |
 | --- | --- |
 | JURA E8 (SDS) with Wi-Fi Connect V2 | pairing, status, counters, maintenance values and the stored drink recipes verified on a real machine (read-only), also while the machine is in energy-saving mode |
-| Home Assistant side (config flow, entities, offline handling, cache of the last values) | automated tests pass on Home Assistant 2025.10 and 2026.10; the integration runs in a Home Assistant against the real E8 |
+| Home Assistant side (config flow, entities, offline handling, cache of the last values) | automated tests pass on Home Assistant 2025.10 and 2026.10; the integration runs in a Home Assistant against the real E8. 0.5.3 has run there on Home Assistant 2026.11.1 since 2026-11-10 without errors or warnings from the integration: polling, an automation that writes the switch-off time at every switch-on and an automation that presses the button for the coffee system rinse |
 | Seen working on the real E8 with 0.5.0 and 0.5.1 | a counter for every product the machine reports, the double drinks included (together they make up the total of the machine); polling every 15 s while the machine is active (the status was back to `ready` one poll after a drink); the last counters and maintenance values after a restart while the machine was off, with `last_seen` on the status; filter wear *unavailable* on a machine that does not report it; the status `programming` while the menu of the machine was open; going offline when the machine switched itself off and online again when it was switched on, without an error; the six settings read from the machine; writing a setting: the switch-off time was changed from 1 h to 4 h in Home Assistant, and the machine still reported 4 h when it was read again after a restart of Home Assistant (the other settings are written with the same command) |
 | Brew buttons, maintenance programs, cancel | the commands are tested end to end against the dongle simulator of the library (real protocol over TCP). On a real E8 (SDS) the **brew button (Coffee)**, the **milk system rinse** and the **coffee system rinse** were run through this integration on 2026-10-09: each press was followed by machine activity and counter changes. The other drinks use the same command. Cleaning, descaling, filter change, milk system cleaning and cancel were **not yet run on a real machine** |
 | Cold extraction (`extraction: cold`) | run on a real Z10 (INTB, EF1106) on 2026-11-11: a latte macchiato was brewed cold and the status showed `brewing` until it was done. Machines of the old protocol (EF545, ...) use a different encoding that is covered by the library simulator only |
-| Brew with parameters, the status `switching_off` | covered by the library simulator only (real protocol over TCP) and **not yet run on a real machine**. When the real E8 switched itself off with 0.5.x, it went from energy saving straight to offline, without `switching_off` |
+| Brew with parameters (strength, water amount, temperature, milk foam time, milk break, bypass) | covered by the library simulator only (real protocol over TCP) and **not yet run on a real machine**. On a real machine the action has only been run with `extraction: cold` (row above) |
+| The status `switching_off` | seen on the real E8 three times (2026-11-03, 2026-11-04 and 2026-11-10), each time when the machine was switched off before its switch-off time had run out: the status was `switching_off` for about 16 minutes, then the dongle went away (`offline`). On 2026-11-10 the machine first ran its own rinse (`maintenance` for a few seconds). When it switched itself off after its switch-off time (4 h, on 2026-11-11 and 2026-11-13), it went straight to `offline`, without `switching_off` |
 | Setup step for the area and the options (new in 0.5.0) | covered by the automated tests on both Home Assistant versions; not yet run in a real setup |
 | Busy machine (menu, brewing, maintenance program) | the machine then pushes progress frames instead of status frames; seen on the real E8 as `brewing` and `programming`, and covered by tests using one frame captured from a real E8 in its menu |
 | Model detection, and filling in entries of older versions | article number, firmware, production date and machine number announced by UDP broadcast (same network as the dongle only), article number or model list as fallback. The UDP part is verified on a real E8: an entry of 0.1.0 got its article number, firmware and model from it. The serial number is made of the production date and the machine number, as on the type plate; this was checked against the type plate of one E8 |
@@ -36,14 +37,19 @@ Requires Home Assistant **2025.10 or newer**.
 
 ## Installation
 
-### HACS (recommended)
+### Marketplace or HACS (recommended)
 
-1. In HACS open the three-dot menu → **Custom repositories**.
-2. Add `https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration`
-   with the category **Integration**.
-3. Search for **JURA Wi-Fi Connect** in HACS, press **Download** and restart
-   Home Assistant.
-4. Continue with [Setup](#setup).
+The integration is in the default list of HACS as **JURA Wi-Fi Connect**; no
+custom repository is needed.
+
+- **Home Assistant 2026.11 and newer** has HACS built in as the **Marketplace**
+  (the HACS installer stops at 2026.11). Prepare the machine as in steps 1 and 2
+  of [Setup](#setup), open *Settings → Marketplace*, search for **JURA Wi-Fi
+  Connect** and select **Install**. This opens the setup directly, without a
+  restart. Updates need a restart, which a repair offers.
+- **Home Assistant 2025.10 to 2026.10 with HACS:** search for **JURA Wi-Fi
+  Connect** in HACS, press **Download**, restart Home Assistant and continue
+  with [Setup](#setup).
 
 ### Manual
 
@@ -196,8 +202,9 @@ data:
   water_amount: 70
 ```
 
-The entity ID depends on the name of your device. The action has not been run on
-a real machine yet, see [Status](#status).
+The entity ID depends on the name of your device. On a real machine the action
+has only been run with `extraction: cold` (on a Z10); the other fields have not
+been run on a real machine yet, see [Status](#status).
 
 ### Maintenance programs
 
@@ -355,10 +362,11 @@ for the cleaning. The same works for descaling and the filter change.
   sessions.
 - With the machine **switched off** the dongle is unreachable: the status shows
   `offline`. **Energy-saving mode** is fine, the dongle stays reachable and a
-  brew wakes the machine up. When the machine **switches itself off**, the E8 can
-  first count down for about a quarter of an hour (the status is then
-  `switching_off`) before the dongle disappears; it was also seen going from
-  energy saving straight to `offline`.
+  brew wakes the machine up. When the E8 was switched off **before its
+  switch-off time had run out**, the status was `switching_off` for about 16
+  minutes before the dongle disappeared (once after a rinse of its own, shown as
+  `maintenance`). When it **switched itself off** after its switch-off time, it
+  went straight to `offline`.
 - Home Assistant **remembers the last counters and maintenance values** that the
   machine reported, and the time it was last seen, and shows them after a restart
   while the machine is switched off, instead of *unknown*. The machine stays the
@@ -420,12 +428,15 @@ for the cleaning. The same works for descaling and the filter change.
   browser keeps brand images for up to a day: if the placeholder is still there
   after an update, reload the page once or twice (the image is refreshed in the
   background) or clear the site data of Home Assistant in the browser.
-- **HACS itself shows the grey placeholder** instead of the logo, in its list and
-  in the update entry (Settings → Updates). HACS 2.0.5 and older still ask the old
-  brands server for the icon, which no longer takes custom integrations since Home
-  Assistant 2026.3 ([hacs/integration#5171](https://github.com/hacs/integration/issues/5171)).
+- **HACS 2.0.5 and older show the grey placeholder** instead of the logo on Home
+  Assistant before 2026.11, in their list and in the update entry (Settings →
+  Updates). They still ask the old brands server for the icon, which no longer
+  takes custom integrations since Home Assistant 2026.3
+  ([hacs/integration#5171](https://github.com/hacs/integration/issues/5171)).
   The logo is shipped correctly: the pages of Home Assistant (integration, device)
-  show it.
+  show it. On Home Assistant 2026.11 the update entry of the Marketplace takes the
+  icon from Home Assistant (`/api/brands/integration/jura_wifi/icon.png`), which
+  serves the logo of this integration, so the logo shows there.
 - Debug logging: `logger: logs: custom_components.jura_wifi: debug` and
   `jura_connect: debug`. Diagnostics downloads contain the state of the
   coordinator, the versions of the integration and the library and the profile
