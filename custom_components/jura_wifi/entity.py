@@ -42,15 +42,17 @@ class JuraWifiEntity(CoordinatorEntity[JuraWifiCoordinator]):
         super().__init__(coordinator)
         entry = coordinator.config_entry
         self._attr_unique_id = f"{entry.entry_id}_{key}"
-        info = DeviceInfo(
+        attributes = device_attributes(entry.data)
+        # Passed to the constructor: since Home Assistant 2026.11 DeviceInfo is a
+        # dataclass, and item assignment only works through a compatibility layer.
+        if coordinator.suggested_area:
+            attributes["suggested_area"] = coordinator.suggested_area
+        self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             manufacturer="JURA",
             name=entry.title,
-            **device_attributes(entry.data),
+            **attributes,
         )
-        if coordinator.suggested_area:
-            info["suggested_area"] = coordinator.suggested_area
-        self._attr_device_info = info
 
     @property
     def snapshot(self) -> MachineSnapshot | None:

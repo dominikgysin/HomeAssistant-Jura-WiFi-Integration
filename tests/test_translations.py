@@ -11,7 +11,11 @@ from typing import Any
 from jura_connect import iter_profiles, load_profile
 import yaml
 
-from custom_components.jura_wifi.api import BREW_OPTIONS
+from custom_components.jura_wifi.api import (
+    BREW_EXTRACTION,
+    BREW_OPTIONS,
+    EXTRACTION_PRESELECTIONS,
+)
 from custom_components.jura_wifi.button import MAINTENANCE_PROGRAMS
 from custom_components.jura_wifi.settings import (
     KNOWN_SETTINGS,
@@ -78,6 +82,8 @@ def test_every_error_the_code_raises_is_translated() -> None:
         "brew_option_range",
         "brew_option_step",
         "brew_option_choice",
+        "brew_extraction_unsupported",
+        "brew_option_conflict",
     } <= used
     for language in LANGUAGES:
         assert used <= set(_load(f"translations/{language}.json")["exceptions"])
@@ -90,6 +96,8 @@ def test_every_message_has_the_placeholders_that_the_code_fills() -> None:
         "brew_option_range": {"product", "option", "minimum", "maximum"},
         "brew_option_step": {"product", "option", "minimum", "step"},
         "brew_option_choice": {"product", "option", "allowed"},
+        "brew_extraction_unsupported": {"product", "option", "extraction"},
+        "brew_option_conflict": {"product", "option", "extraction"},
         "setting_failed": {"setting", "error"},
         "not_a_brew_button": set(),
     }
@@ -265,7 +273,7 @@ def test_the_brew_action_is_documented_in_every_language() -> None:
     """The action has a name and a description, and so has each of its fields."""
     definition = yaml.safe_load((COMPONENT / "services.yaml").read_text("utf-8"))
     fields = set(definition["brew"]["fields"])
-    assert fields == {option.key for option in BREW_OPTIONS}
+    assert fields == {*(option.key for option in BREW_OPTIONS), BREW_EXTRACTION}
     assert definition["brew"]["target"]["entity"] == {
         "integration": "jura_wifi",
         "domain": "button",
@@ -288,6 +296,13 @@ def test_the_brew_action_is_documented_in_every_language() -> None:
             "normal",
             "high",
         }
+        # and those of the extraction selector
+        key = definition["brew"]["fields"][BREW_EXTRACTION]["selector"]["select"][
+            "translation_key"
+        ]
+        assert set(translations["selector"][key]["options"]) == set(
+            EXTRACTION_PRESELECTIONS
+        )
     assert "brew" in _load("icons.json")["services"]
 
 

@@ -283,6 +283,12 @@
         "normal": "Normal",
         "high": "High"
       }
+    },
+    "brew_extraction": {
+      "options": {
+        "hot": "Hot",
+        "cold": "Cold (cold brew)"
+      }
     }
   },
   "services": {
@@ -313,6 +319,10 @@
         "bypass": {
           "name": "Bypass",
           "description": "Millilitres of water that bypass the coffee, as for an Americano."
+        },
+        "extraction": {
+          "name": "Extraction",
+          "description": "Hot or cold extraction (cold brew). Cold needs a machine and a drink that offer it, such as the coffee drinks of the Z10."
         }
       }
     }
@@ -362,6 +372,12 @@
     },
     "brew_option_choice": {
       "message": "{option} for {product} has to be one of: {allowed}."
+    },
+    "brew_extraction_unsupported": {
+      "message": "{product} cannot be brewed with the {extraction} extraction on this machine."
+    },
+    "brew_option_conflict": {
+      "message": "{option} cannot be set for {product} with the {extraction} extraction."
     }
   }
 }

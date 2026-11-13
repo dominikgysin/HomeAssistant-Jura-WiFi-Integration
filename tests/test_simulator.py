@@ -503,6 +503,39 @@ def test_brewing_with_options_changes_only_those_parameters(
     assert _commands(simulator) == [read, sent]
 
 
+@pytest.mark.parametrize(
+    ("machine_type", "sent", "accepted"),
+    [
+        # the Z10 (EF1106): the stored recipe, grown to 20 bytes with the cold brew
+        # bit of the mask byte at the end. The simulator knows the 16 bytes of the
+        # E8 only and refuses the longer blob; what counts here is what was sent.
+        ("EF1106", "@TP:0300081C000002000100000000000000040000" + "10", False),
+        # the Z10 (EF545) of the old T protocol: the temperature byte says cold
+        ("EF545", "@TP:0300081C000080000100000000000000", True),
+    ],
+)
+def test_a_cold_extraction_reaches_the_machine(
+    machine: Callable[..., Simulator], machine_type: str, sent: str, accepted: bool
+) -> None:
+    """The cold brew preselection is sent the way the J.O.E. app sends it."""
+    simulator = machine(
+        allow_brew=True, pmode_products={0x03: "0300081C000002000100000000000000"}
+    )
+    host, port = _address(simulator)
+    auth_hash = JuraWifiClient(host, port, CONN_ID, "", "", machine_type).pair()
+    client = JuraWifiClient(host, port, CONN_ID, auth_hash, "", machine_type)
+    _commands(simulator)
+
+    if accepted:
+        client.brew("coffee", {"ml": 140, "preselections": ("coldbrew",)})
+    else:
+        with pytest.raises(JuraWifiError, match="rejected"):
+            client.brew("coffee", {"ml": 140, "preselections": ("coldbrew",)})
+
+    # the second blob is the resend for a machine that wakes up from energy saving
+    assert _commands(simulator) == ["@TM:41,03", sent, *([] if accepted else [sent])]
+
+
 def test_a_dongle_that_aborts_the_handshake_is_no_pairing_problem(
     machine: Callable[..., Simulator],
 ) -> None:

@@ -60,3 +60,12 @@ brew:
           step: 5
           unit_of_measurement: ml
           mode: box
+    extraction:
+      required: false
+      example: cold
+      selector:
+        select:
+          options:
+            - hot
+            - cold
+          translation_key: brew_extraction

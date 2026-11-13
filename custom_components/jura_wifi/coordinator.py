@@ -559,7 +559,7 @@ class JuraWifiCoordinator(DataUpdateCoordinator[JuraWifiData]):
         ``options`` change single parameters of that recipe for this drink only. They
         are checked against the profile before anything is sent.
         """
-        arguments: dict[str, int | str] = {}
+        arguments: dict[str, Any] = {}
         if options:
             definition = next(p for p in self.profile.products if p.name == product)
             try:

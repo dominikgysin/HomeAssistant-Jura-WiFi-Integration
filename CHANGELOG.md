@@ -7,6 +7,39 @@ version may change behaviour.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-13
+
+### Added
+
+- **Cold extraction** for the action `jura_wifi.brew`: the new field `extraction`
+  (`hot` or `cold`) brews a drink with the cold brew preselection of the J.O.E. app,
+  for the drinks whose profile declares it (for example the coffee drinks of the Z10).
+  The machine setting *Brewing mode* does not apply to drinks started remotely, so a
+  Z10 brewed them hot. A cold drink takes no `temperature`; on machines of the old
+  protocol the stored temperature is left out, as the cold brew takes its place. The
+  encoding comes from the J.O.E. app. It was verified on a real Z10 (INTB, EF1106),
+  which brewed a cold latte macchiato; the encoding of the old protocol has not been
+  run on a real machine yet.
+
+### Changed
+
+- Ready for **Home Assistant 2026.11**: the area chosen in the setup is passed to the
+  device info when it is created instead of being set on it afterwards. Since 2026.11
+  `DeviceInfo` is a dataclass, and setting its keys afterwards only works through a
+  compatibility layer. The behaviour stays the same, also on 2025.10.
+- The manifest declares the category *appliances_cleaning.cooking*, the same as the
+  core integration La Marzocco; the HACS action asked for a category.
+- README: the installation from the default list of HACS, without a custom
+  repository, and from the **Marketplace** that Home Assistant 2026.11 has built in.
+  The status table and the notes now say that the action `jura_wifi.brew` has run on a
+  real machine only with `extraction: cold`; that the E8 showed `switching_off` for
+  about 16 minutes when it was switched off before its switch-off time had run out,
+  but went straight to offline when it switched itself off; that 0.5.3 has run on
+  Home Assistant 2026.11.1 without errors or warnings from the integration; and that
+  the automated tests pass on 2026.11.1 too, with a local workaround for
+  `pytest-homeassistant-custom-component`, which has no release for 2026.11 yet. The
+  note on the logo says that the update entry of the Marketplace shows it.
+
 ## [0.5.3] - 2026-10-10
 
 ### Removed
@@ -288,7 +321,8 @@ The behaviour of the integration is unchanged.
   status, problem and maintenance sensors and brew counters; opt-in brew buttons
   with the factory recipes; diagnostics; English and German translations.
 
-[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.0...v0.5.1

@@ -5,11 +5,13 @@ from __future__ import annotations
 import dataclasses
 from unittest.mock import MagicMock
 
+from jura_connect import load_profile
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 import voluptuous as vol
 
 from custom_components.jura_wifi.api import (
+    BREW_EXTRACTION,
     BREW_OPTIONS,
     JuraWifiBusy,
     JuraWifiConnectionError,
@@ -306,5 +308,89 @@ def test_the_schema_has_a_field_for_every_option() -> None:
     """The fields of the action are the options of the client, with their names."""
     from custom_components.jura_wifi import BREW_SCHEMA
 
-    assert {str(key) for key in BREW_SCHEMA} == {option.key for option in BREW_OPTIONS}
+    assert {str(key) for key in BREW_SCHEMA} == {
+        *(option.key for option in BREW_OPTIONS),
+        BREW_EXTRACTION,
+    }
     assert all(isinstance(key, vol.Optional) for key in BREW_SCHEMA)
+
+
+@pytest.fixture
+async def z10(
+    hass: HomeAssistant, mock_client: MagicMock, mock_config_entry: MockConfigEntry
+) -> MockConfigEntry:
+    """Return an entry of a Z10 with the brew buttons enabled, set up."""
+    mock_client.profile = load_profile("EF1106")
+    await setup_with_options(hass, mock_config_entry, **{CONF_ENABLE_BREWING: True})
+    return mock_config_entry
+
+
+async def test_a_cold_extraction(
+    hass: HomeAssistant, mock_client: MagicMock, z10: MockConfigEntry
+) -> None:
+    """The Z10 brews its coffee drinks cold with the cold brew preselection."""
+    await _brew(hass, z10, "coffee", extraction="cold", water_amount=70)
+
+    mock_client.brew.assert_called_once_with(
+        "coffee", {"ml": 70, "preselections": ("coldbrew",)}
+    )
+
+
+async def test_a_hot_extraction_is_the_stored_recipe(
+    hass: HomeAssistant, mock_client: MagicMock, z10: MockConfigEntry
+) -> None:
+    """Hot is what the button brews."""
+    await _brew(hass, z10, "coffee", extraction="Hot")
+
+    mock_client.brew.assert_called_once_with("coffee")
+
+
+@pytest.mark.parametrize(
+    ("product", "fields", "key"),
+    [
+        ("milk_foam", {"extraction": "cold"}, "brew_extraction_unsupported"),
+        (
+            "coffee",
+            {"extraction": "cold", "temperature": "low"},
+            "brew_option_conflict",
+        ),
+    ],
+)
+async def test_a_cold_extraction_the_drink_does_not_allow_is_refused(
+    hass: HomeAssistant,
+    mock_client: MagicMock,
+    z10: MockConfigEntry,
+    product: str,
+    fields: dict,
+    key: str,
+) -> None:
+    """Only the drinks that declare cold brew, and then without a temperature."""
+    with pytest.raises(ServiceValidationError) as err:
+        await _brew(hass, z10, product, **fields)
+
+    assert err.value.translation_key == key
+    mock_client.brew.assert_not_called()
+
+
+async def test_a_machine_without_cold_brew_refuses_a_cold_extraction(
+    hass: HomeAssistant, mock_client: MagicMock, brewing: MockConfigEntry
+) -> None:
+    """The E8 has no cold brew, and the message says so."""
+    with pytest.raises(ServiceValidationError) as err:
+        await _brew(hass, brewing, extraction="cold")
+
+    assert err.value.translation_key == "brew_extraction_unsupported"
+    assert str(err.value).startswith(
+        "Espresso cannot be brewed with the cold extraction on this machine"
+    )
+    mock_client.brew.assert_not_called()
+
+
+async def test_an_unknown_extraction_is_refused_by_the_schema(
+    hass: HomeAssistant, mock_client: MagicMock, z10: MockConfigEntry
+) -> None:
+    """Only hot and cold."""
+    with pytest.raises(vol.Invalid):
+        await _brew(hass, z10, "coffee", extraction="lukewarm")
+
+    mock_client.brew.assert_not_called()
