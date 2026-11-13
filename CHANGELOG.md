@@ -34,9 +34,11 @@ version may change behaviour.
   The status table and the notes now say that the action `jura_wifi.brew` has run on a
   real machine only with `extraction: cold`; that the E8 showed `switching_off` for
   about 16 minutes when it was switched off before its switch-off time had run out,
-  but went straight to offline when it switched itself off; and that 0.5.3 has run on
-  Home Assistant 2026.11.1 without errors or warnings from the integration. The note
-  on the logo says that the update entry of the Marketplace shows it.
+  but went straight to offline when it switched itself off; that 0.5.3 has run on
+  Home Assistant 2026.11.1 without errors or warnings from the integration; and that
+  the automated tests pass on 2026.11.1 too, with a local workaround for
+  `pytest-homeassistant-custom-component`, which has no release for 2026.11 yet. The
+  note on the logo says that the update entry of the Marketplace shows it.
 
 ## [0.5.3] - 2026-10-10
 
