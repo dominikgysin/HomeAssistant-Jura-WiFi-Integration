@@ -12,6 +12,14 @@ version may change behaviour.
 - **French translation** (`translations/fr.json`): the setup and options forms, the
   names of the entities and their states, the action *Brew with options* and the
   error messages. The checks of the translations cover French as well.
+- **Italian translation** (`translations/it.json`), with the same scope as the
+  French one. The checks of the translations cover Italian as well.
+- **Swiss German translation** (`translations/gsw.json`), in Bernese dialect like
+  the Swiss German of Home Assistant itself, with the same scope as the French one.
+  The checks of the translations cover it as well, and the hint to leave the settings
+  menu is now checked in every language. Together with German, French and Italian,
+  the integration speaks all the national languages of Switzerland that Home
+  Assistant offers; it has no Romansh.
 
 ### Changed
 

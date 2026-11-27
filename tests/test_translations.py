@@ -25,7 +25,7 @@ from custom_components.jura_wifi.settings import (
 from custom_components.jura_wifi.status import STATUSES
 
 COMPONENT = Path(__file__).parents[1] / "custom_components" / "jura_wifi"
-LANGUAGES = ("en", "de", "fr")
+LANGUAGES = ("en", "de", "fr", "it", "gsw")
 
 
 def _load(name: str) -> dict[str, Any]:
@@ -53,6 +53,20 @@ def test_french_has_every_key_of_the_english_translation() -> None:
     english = set(_keys(_load("translations/en.json")))
     french = set(_keys(_load("translations/fr.json")))
     assert english == french
+
+
+def test_italian_has_every_key_of_the_english_translation() -> None:
+    """Neither language misses a string of the other."""
+    english = set(_keys(_load("translations/en.json")))
+    italian = set(_keys(_load("translations/it.json")))
+    assert english == italian
+
+
+def test_swiss_german_has_every_key_of_the_english_translation() -> None:
+    """Neither language misses a string of the other."""
+    english = set(_keys(_load("translations/en.json")))
+    swiss_german = set(_keys(_load("translations/gsw.json")))
+    assert english == swiss_german
 
 
 def test_every_status_is_translated_and_has_an_icon() -> None:
@@ -351,7 +365,14 @@ def test_everything_that_asks_to_pair_says_to_leave_the_settings_menu() -> None:
     It is the one mistake that is easy to make: the machine cannot show the prompt
     in the menu and refuses the connection.
     """
-    hints = {"en": "settings menu", "de": "Einstellungsmenü"}
+    hints = {
+        "en": "settings menu",
+        "de": "Einstellungsmenü",
+        "fr": "menu des réglages",
+        "it": "menu delle impostazioni",
+        "gsw": "Yystelligsmenü",
+    }
+    assert set(hints) == set(LANGUAGES)
     for language, hint in hints.items():
         config = _load(f"translations/{language}.json")["config"]
         texts = {
