@@ -165,7 +165,7 @@
       "model": { "name": "Modäu" },
       "total_brews": { "name": "Totau Zuebereitige" },
       "product_brews": { "name": "Aazau {product}" },
-      "cleaning_need": { "name": "Reinigongsbedarf" },
+      "cleaning_need": { "name": "Reinigongssbedarf" },
       "descaling_need": { "name": "Entkaukigsbedarf" },
       "filter_wear": { "name": "Fiuterverbruuch" },
       "cycles_cleaning": { "name": "Reinigong düregfüehrt" },

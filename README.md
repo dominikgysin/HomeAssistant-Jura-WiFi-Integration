@@ -12,6 +12,9 @@ It reads the state, the counters and the maintenance needs of the machine, and
 it can brew your drinks and start the maintenance programs. Optionally it also
 shows and changes the settings of the machine.
 
+The setup, the entities, the action *Brew with options* and the error messages
+are available in English, German, French, Italian and Swiss German (Bernese).
+
 It is built on the reverse-engineered
 [`jura-connect`](https://github.com/makefu/jura-connect) library (MIT), which
 bundles the machine profiles of the J.O.E. app. This project is not affiliated

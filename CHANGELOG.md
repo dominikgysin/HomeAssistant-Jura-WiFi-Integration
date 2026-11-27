@@ -7,6 +7,8 @@ version may change behaviour.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-28
+
 ### Added
 
 - **French translation** (`translations/fr.json`): the setup and options forms, the
@@ -25,6 +27,8 @@ version may change behaviour.
 
 - README: below the required Home Assistant version, a line links the changelog and
   the release notes, which HACS and the Marketplace show when they offer an update.
+- README: the introduction names the languages of the integration: English, German,
+  French, Italian and Swiss German (Bernese).
 
 ## [0.6.0] - 2026-11-13
 
@@ -340,7 +344,8 @@ The behaviour of the integration is unchanged.
   status, problem and maintenance sensors and brew counters; opt-in brew buttons
   with the factory recipes; diagnostics; English and German translations.
 
-[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/dominikgysin/HomeAssistant-Jura-WiFi-Integration/compare/v0.5.1...v0.5.2
