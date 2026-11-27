@@ -25,7 +25,7 @@ from custom_components.jura_wifi.settings import (
 from custom_components.jura_wifi.status import STATUSES
 
 COMPONENT = Path(__file__).parents[1] / "custom_components" / "jura_wifi"
-LANGUAGES = ("en", "de")
+LANGUAGES = ("en", "de", "fr")
 
 
 def _load(name: str) -> dict[str, Any]:
@@ -46,6 +46,13 @@ def test_german_has_every_key_of_the_english_translation() -> None:
     english = set(_keys(_load("translations/en.json")))
     german = set(_keys(_load("translations/de.json")))
     assert english == german
+
+
+def test_french_has_every_key_of_the_english_translation() -> None:
+    """Neither language misses a string of the other."""
+    english = set(_keys(_load("translations/en.json")))
+    french = set(_keys(_load("translations/fr.json")))
+    assert english == french
 
 
 def test_every_status_is_translated_and_has_an_icon() -> None:

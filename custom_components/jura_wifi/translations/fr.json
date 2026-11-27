@@ -1,0 +1,383 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connecter une machine JURA",
+        "description": "Saisissez l'adresse IP du module Wi-Fi Connect.\n\nAvant de continuer, sur la machine :\n\n1. Allumez-la et **quittez le menu des réglages**. L'écran doit afficher l'écran d'accueil, sinon la machine refuse la connexion.\n2. **Fermez l'application J.O.E.** Le module n'accepte qu'une connexion à la fois.\n\nHome Assistant s'appaire ensuite avec la machine : confirmez la demande avec **OK** sur la machine.",
+        "data": {
+          "host": "Adresse IP"
+        },
+        "data_description": {
+          "host": "Adresse du module Wi-Fi Connect sur votre réseau."
+        }
+      },
+      "pair_failed": {
+        "title": "Échec de l'appairage",
+        "description": "L'appairage avec {host} n'a pas fonctionné ({reason}).\n\nVérifiez sur la machine :\n\n- **Quittez le menu des réglages.** L'écran doit afficher l'écran d'accueil ; tant qu'un menu est ouvert, la machine ne peut pas demander la confirmation.\n- Fermez l'application J.O.E.\n- Confirmez la demande avec **OK** dans les 60 secondes.\n\nPuis réessayez.",
+        "data": {
+          "pin": "Code PIN"
+        },
+        "data_description": {
+          "pin": "Le code PIN de configuration de la machine. Laissez vide s'il n'y en a pas."
+        }
+      },
+      "article": {
+        "title": "Quel est le modèle ?",
+        "description": "Le modèle n'a pas pu être lu sur la machine, en général parce que Home Assistant est sur un autre réseau que le module. Saisissez le numéro d'article : il figure dans l'application J.O.E. à côté du nom de la machine (par exemple 15833) et sur la plaque signalétique sous la machine. Laissez vide pour choisir le modèle dans une liste.",
+        "data": {
+          "article_number": "Numéro d'article"
+        },
+        "data_description": {
+          "article_number": "Cinq chiffres, par exemple 15833."
+        }
+      },
+      "model": {
+        "title": "Choisir le modèle",
+        "data": {
+          "model": "Modèle de machine"
+        },
+        "data_description": {
+          "model": "Le nom du modèle avec sa variante régionale, par exemple « E8 (SDS) ». Tapez pour chercher dans la liste."
+        }
+      },
+      "options": {
+        "title": "Pièce et options",
+        "description": "Où se trouve la machine, et que doit proposer Home Assistant ? Tout, sauf la pièce, peut être changé plus tard avec *Configurer* sur l'intégration.",
+        "data": {
+          "area": "Pièce",
+          "scan_interval": "Intervalle de mise à jour",
+          "enable_brewing": "Boutons de préparation",
+          "enable_maintenance": "Boutons d'entretien",
+          "enable_settings": "Réglages de la machine"
+        },
+        "data_description": {
+          "area": "Facultatif. L'appareil de la machine est créé dans cette pièce, et toutes ses entités prennent le nom de la pièce. Cela ne se fait qu'une fois ; pour déplacer la machine plus tard, changez la pièce de l'appareil.",
+          "scan_interval": "Secondes entre deux interrogations. Le module n'accepte qu'une connexion à la fois, ne descendez donc pas trop bas.",
+          "enable_brewing": "Ajoute un bouton par boisson, qui la prépare avec la recette enregistrée sur la machine, telle qu'elle est choisie sur son écran. Placez une tasse avant d'appuyer. Ajoute aussi un bouton d'annulation et active l'action Préparer avec options.",
+          "enable_maintenance": "Ajoute des boutons qui lancent les programmes d'entretien de la machine (nettoyage, détartrage, rinçage du système de lait, rinçage du système de café, ...). La machine demande ensuite les confirmations sur son écran ; le rinçage du système de café démarre tout de suite, placez donc une tasse sous la buse. Ajoute aussi un bouton d'annulation.",
+          "enable_settings": "Ajoute des entités pour les réglages de la machine (dureté de l'eau, délai d'arrêt, langue, ...). Les valeurs sont lues sur la machine et écrites sur elle ; un changement demande que la machine soit allumée et au repos."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Appairer à nouveau",
+        "description": "La machine à l'adresse {host} n'accepte plus les identifiants enregistrés. Allumez-la, **quittez le menu des réglages** (l'écran doit afficher l'écran d'accueil) et fermez l'application J.O.E. Confirmez la demande de connexion sur l'écran après avoir validé."
+      },
+      "reconfigure": {
+        "title": "Changer l'adresse",
+        "description": "Saisissez la nouvelle adresse IP du module Wi-Fi Connect.\n\nSi Home Assistant ne peut pas lire le modèle sur la machine parce qu'il est sur un autre réseau que le module, ajoutez le numéro d'article : il figure dans l'application J.O.E. à côté du nom de la machine et sur la plaque signalétique. Il doit correspondre au modèle configuré.",
+        "data": {
+          "host": "Adresse IP",
+          "article_number": "Numéro d'article"
+        },
+        "data_description": {
+          "article_number": "Facultatif, cinq chiffres. Laissez vide pour garder la valeur enregistrée."
+        }
+      }
+    },
+    "progress": {
+      "pair": "Regardez l'écran de la machine à l'adresse {host} et confirmez la demande de connexion avec **OK** dans les 60 secondes.\n\nAucune demande à l'écran ? Quittez le menu des réglages de la machine (retour à l'écran d'accueil) et réessayez.",
+      "identify": "Lecture du modèle sur la machine à l'adresse {host}…"
+    },
+    "error": {
+      "cannot_connect": "La machine n'a pas répondu. Est-elle allumée et joignable depuis Home Assistant ?",
+      "invalid_auth": "La machine a refusé les identifiants enregistrés.",
+      "pairing_timeout": "La demande de connexion n'a pas été confirmée sur la machine à temps. Quittez le menu des réglages s'il est ouvert et réessayez.",
+      "pairing_rejected": "La machine a refusé la demande de connexion. Cela arrive dans le menu des réglages ou quand la machine est occupée : revenez à l'écran d'accueil et réessayez.",
+      "machine_in_menu": "La machine est dans son menu des réglages et ne peut pas demander la confirmation. Quittez le menu (retour à l'écran d'accueil) et réessayez.",
+      "machine_busy": "La machine est occupée (préparation ou programme d'entretien en cours). Attendez qu'elle ait fini et réessayez.",
+      "wrong_pin": "La machine a refusé le code PIN.",
+      "unknown_article": "Ce numéro d'article ne figure pas dans la liste des machines JURA connues.",
+      "article_other_model": "Ce numéro d'article correspond à un autre type de machine que celui configuré. Pour changer de modèle, supprimez l'intégration et configurez-la à nouveau.",
+      "unknown": "Erreur inattendue, voir le journal de Home Assistant."
+    },
+    "abort": {
+      "already_configured": "Cette machine est déjà configurée.",
+      "reauth_successful": "Appairage réussi, la machine est de nouveau connectée.",
+      "reconfigure_successful": "L'adresse a été mise à jour."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options JURA",
+        "data": {
+          "scan_interval": "Intervalle de mise à jour",
+          "enable_brewing": "Boutons de préparation",
+          "enable_maintenance": "Boutons d'entretien",
+          "enable_settings": "Réglages de la machine"
+        },
+        "data_description": {
+          "scan_interval": "Secondes entre deux interrogations. Le module n'accepte qu'une connexion à la fois, ne descendez donc pas trop bas.",
+          "enable_brewing": "Ajoute un bouton par boisson, qui la prépare avec la recette enregistrée sur la machine, telle qu'elle est choisie sur son écran. Placez une tasse avant d'appuyer. Ajoute aussi un bouton d'annulation et active l'action Préparer avec options.",
+          "enable_maintenance": "Ajoute des boutons qui lancent les programmes d'entretien de la machine (nettoyage, détartrage, rinçage du système de lait, rinçage du système de café, ...). La machine demande ensuite les confirmations sur son écran ; le rinçage du système de café démarre tout de suite, placez donc une tasse sous la buse. Ajoute aussi un bouton d'annulation.",
+          "enable_settings": "Ajoute des entités pour les réglages de la machine (dureté de l'eau, délai d'arrêt, langue, ...). Les valeurs sont lues sur la machine et écrites sur elle ; un changement demande que la machine soit allumée et au repos."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connectivity": { "name": "Connexion" },
+      "water_tank_empty": { "name": "Réservoir d'eau vide" },
+      "grounds_container_full": { "name": "Bac à marc plein" },
+      "drip_tray_full": { "name": "Égouttoir plein" },
+      "drip_tray_missing": { "name": "Égouttoir absent" },
+      "grounds_container_missing": { "name": "Bac à marc absent" },
+      "beans_empty": { "name": "Plus de grains" },
+      "cleaning_due": { "name": "Nettoyage nécessaire" },
+      "descaling_due": { "name": "Détartrage nécessaire" },
+      "filter_change_due": { "name": "Changement de filtre nécessaire" },
+      "milk_rinse_due": { "name": "Rinçage du système de lait nécessaire" },
+      "milk_clean_due": { "name": "Nettoyage du système de lait nécessaire" },
+      "system_fill_needed": { "name": "Remplissage du système nécessaire" },
+      "tap_open": { "name": "Robinet ouvert" },
+      "front_cover_open": { "name": "Couvercle avant ouvert" },
+      "machine_error": { "name": "Erreur de la machine" },
+      "outlet_missing": { "name": "Écoulement absent" },
+      "rear_cover_missing": { "name": "Couvercle arrière absent" },
+      "water_tank_removal_requested": { "name": "Retrait du réservoir d'eau demandé" },
+      "ventilation_closed": { "name": "Ventilation fermée" },
+      "powder_cover_open": { "name": "Couvercle du café moulu ouvert" },
+      "filter_detected": { "name": "Filtre détecté" },
+      "keys_locked": { "name": "Touches verrouillées" },
+      "remote_screen_active": { "name": "Écran à distance actif" },
+      "cleaning_recommended": { "name": "Nettoyage conseillé" },
+      "descaling_recommended": { "name": "Détartrage conseillé" },
+      "filter_change_recommended": { "name": "Changement de filtre conseillé" }
+    },
+    "sensor": {
+      "status": {
+        "name": "État",
+        "state": {
+          "offline": "Hors ligne",
+          "attention": "Demande une intervention",
+          "rinsing": "Rinçage",
+          "heating_up": "Chauffe",
+          "brewing": "Préparation",
+          "maintenance": "Entretien",
+          "programming": "Mode programmation",
+          "busy": "Occupée",
+          "switching_off": "Arrêt en cours",
+          "energy_saving": "Économie d'énergie",
+          "ready": "Prête"
+        }
+      },
+      "model": { "name": "Modèle" },
+      "total_brews": { "name": "Total des préparations" },
+      "product_brews": { "name": "Compteur {product}" },
+      "cleaning_need": { "name": "Besoin de nettoyage" },
+      "descaling_need": { "name": "Besoin de détartrage" },
+      "filter_wear": { "name": "Usure du filtre" },
+      "cycles_cleaning": { "name": "Nettoyages effectués" },
+      "cycles_descale": { "name": "Détartrages effectués" },
+      "cycles_filter_change": { "name": "Changements de filtre effectués" },
+      "cycles_milk_rinse": { "name": "Rinçages du système de lait effectués" },
+      "cycles_coffee_rinse": { "name": "Rinçages du système de café effectués" },
+      "cycles_milk_clean": { "name": "Nettoyages du système de lait effectués" }
+    },
+    "button": {
+      "brew": { "name": "Préparer {product}" },
+      "cancel": { "name": "Annuler l'action en cours" },
+      "start_cleaning": { "name": "Lancer le nettoyage" },
+      "start_descale": { "name": "Lancer le détartrage" },
+      "start_filter_change": { "name": "Lancer le changement de filtre" },
+      "start_cappu_rinse": { "name": "Rincer le système de lait" },
+      "start_cappu_clean": { "name": "Nettoyer le système de lait" },
+      "start_coffee_rinse": { "name": "Rincer le système de café" }
+    },
+    "number": {
+      "setting_hardness": { "name": "Dureté de l'eau" },
+      "setting_other": { "name": "{setting}" }
+    },
+    "select": {
+      "setting_hardness": {
+        "name": "Dureté de l'eau",
+        "state": {
+          "step_1": "Niveau 1",
+          "step_2": "Niveau 2",
+          "step_3": "Niveau 3",
+          "step_4": "Niveau 4"
+        }
+      },
+      "setting_auto_off": {
+        "name": "Délai d'arrêt",
+        "state": {
+          "15min": "15 minutes",
+          "30min": "30 minutes",
+          "1h": "1 heure",
+          "2h": "2 heures",
+          "3h": "3 heures",
+          "4h": "4 heures",
+          "5h": "5 heures",
+          "6h": "6 heures",
+          "7h": "7 heures",
+          "8h": "8 heures",
+          "9h": "9 heures"
+        }
+      },
+      "setting_units": {
+        "name": "Unités",
+        "state": {
+          "ml": "Millilitres",
+          "oz": "Onces"
+        }
+      },
+      "setting_language": {
+        "name": "Langue",
+        "state": {
+          "german": "Allemand",
+          "english": "Anglais",
+          "french": "Français",
+          "italian": "Italien",
+          "dutch": "Néerlandais",
+          "spanish": "Espagnol",
+          "portuguese": "Portugais",
+          "swedish": "Suédois",
+          "russian": "Russe",
+          "polish": "Polonais",
+          "esti": "Estonien",
+          "bulgarian": "Bulgare",
+          "chinese": "Chinois",
+          "czech": "Tchèque",
+          "danish": "Danois",
+          "finnish": "Finnois",
+          "hebrew": "Hébreu",
+          "hollandisch": "Néerlandais",
+          "hungarian": "Hongrois",
+          "japanese": "Japonais",
+          "korean": "Coréen",
+          "latvian": "Letton",
+          "lithuanian": "Lituanien",
+          "norwegian": "Norvégien",
+          "romanian": "Roumain",
+          "slovenian": "Slovène",
+          "thai": "Thaï",
+          "turkish": "Turc"
+        }
+      },
+      "setting_brewing_mode": {
+        "name": "Mode de préparation",
+        "state": {
+          "ask": "Demander à chaque fois",
+          "classic": "Classique",
+          "light": "Léger",
+          "sweet": "Doux",
+          "cold": "Froid",
+          "profile1": "Profil 1",
+          "profile2": "Profil 2",
+          "profile3": "Profil 3",
+          "profile4": "Profil 4"
+        }
+      },
+      "setting_other": { "name": "{setting}" }
+    },
+    "switch": {
+      "setting_quality_assistant": { "name": "Assistant qualité" },
+      "setting_other": { "name": "{setting}" }
+    }
+  },
+  "selector": {
+    "brew_temperature": {
+      "options": {
+        "low": "Basse",
+        "normal": "Normale",
+        "high": "Élevée"
+      }
+    },
+    "brew_extraction": {
+      "options": {
+        "hot": "Chaude",
+        "cold": "Froide (cold brew)"
+      }
+    }
+  },
+  "services": {
+    "brew": {
+      "name": "Préparer avec options",
+      "description": "Prépare la boisson d'un bouton de préparation en changeant certains paramètres de sa recette, pour cette boisson seulement. Tout ce qui n'est pas indiqué reste tel qu'enregistré sur la machine. Placez une tasse.",
+      "fields": {
+        "strength": {
+          "name": "Intensité",
+          "description": "Intensité du café, parmi les niveaux que la machine propose pour la boisson."
+        },
+        "water_amount": {
+          "name": "Quantité d'eau",
+          "description": "Quantité d'eau en millilitres, dans la plage permise pour la boisson."
+        },
+        "temperature": {
+          "name": "Température",
+          "description": "Température de préparation."
+        },
+        "milk_foam_time": {
+          "name": "Durée de mousse de lait",
+          "description": "Secondes pendant lesquelles la mousse de lait est servie."
+        },
+        "milk_break": {
+          "name": "Pause du lait",
+          "description": "Secondes de pause entre le lait et le café."
+        },
+        "bypass": {
+          "name": "Eau ajoutée",
+          "description": "Millilitres d'eau qui contournent le café, comme pour un americano."
+        },
+        "extraction": {
+          "name": "Extraction",
+          "description": "Extraction chaude ou froide (cold brew). Le froid demande une machine et une boisson qui le proposent, comme les cafés de la Z10."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "La machine a refusé les identifiants enregistrés. Appairez-la à nouveau."
+    },
+    "update_failed": {
+      "message": "Réponse inattendue de la machine : {error}"
+    },
+    "unknown_machine_type": {
+      "message": "Aucun profil pour le type de machine {machine_type}."
+    },
+    "machine_offline": {
+      "message": "La machine n'est pas joignable."
+    },
+    "machine_busy": {
+      "message": "La machine est occupée en ce moment (préparation, menu ouvert ou programme d'entretien en cours)."
+    },
+    "product_blocked": {
+      "message": "{product} ne peut pas être préparé maintenant. Vérifiez les alertes de la machine."
+    },
+    "brew_failed": {
+      "message": "Impossible de préparer {product} : {error}"
+    },
+    "maintenance_failed": {
+      "message": "Impossible de lancer {program} : {error}"
+    },
+    "cancel_failed": {
+      "message": "Impossible d'annuler l'action en cours : {error}"
+    },
+    "setting_failed": {
+      "message": "Impossible de changer {setting} : {error}"
+    },
+    "not_a_brew_button": {
+      "message": "Cette action ne fonctionne qu'avec les boutons de préparation."
+    },
+    "brew_option_unsupported": {
+      "message": "{product} n'a pas de réglage {option}."
+    },
+    "brew_option_range": {
+      "message": "{option} pour {product} doit être entre {minimum} et {maximum}."
+    },
+    "brew_option_step": {
+      "message": "{option} pour {product} doit valoir {minimum} plus un multiple de {step}."
+    },
+    "brew_option_choice": {
+      "message": "{option} pour {product} doit être l'une de ces valeurs : {allowed}."
+    },
+    "brew_extraction_unsupported": {
+      "message": "{product} ne peut pas être préparé avec l'extraction {extraction} sur cette machine."
+    },
+    "brew_option_conflict": {
+      "message": "{option} ne peut pas être réglé pour {product} avec l'extraction {extraction}."
+    }
+  }
+}

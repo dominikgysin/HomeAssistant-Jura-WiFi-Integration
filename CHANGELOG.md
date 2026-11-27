@@ -7,6 +7,12 @@ version may change behaviour.
 
 ## [Unreleased]
 
+### Added
+
+- **French translation** (`translations/fr.json`): the setup and options forms, the
+  names of the entities and their states, the action *Brew with options* and the
+  error messages. The checks of the translations cover French as well.
+
 ### Changed
 
 - README: below the required Home Assistant version, a line links the changelog and
