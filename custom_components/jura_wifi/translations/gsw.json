@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "JURA-Maschine verbinde",
-        "description": "Gib d IP-Adrässe vom Wi-Fi-Connect-Stick yy.\n\nBevor du wytermachsch, ar Maschine:\n\n1. Schaut se yy und **gang us em Yystelligsmenü use**. Ds Display muess der Startbiudschirm zeige, süsch lehnt d Maschine d Verbindig ab.\n2. **Tue d J.O.E.-App zue**. Der Stick bedient nume ei Verbindig glychzytig.\n\nHome Assistant koppelet sech de mit der Maschine: Bestätig d Aafrag mit **OK** ar Maschine.",
+        "description": "Gib d IP-Adrässe vom Wi-Fi-Connect-Stick yy.\n\nBevor du wytermachsch, a dr Maschine:\n\n1. Schaut se yy u **gang us em Yystelligsmenü use**. Ds Display muess dr Startbiudschirm zeige, süsch lehnt d Maschine d Verbindig ab.\n2. **Tue d J.O.E.-App zue**. Dr Stick bedient nume ei Verbindig glychzytig.\n\nHome Assistant koppelet sech de mit dr Maschine: Bestätig d Aafrag mit **OK** a dr Maschine.",
         "data": {
           "host": "IP-Adrässe"
         },
@@ -13,17 +13,17 @@
       },
       "pair_failed": {
         "title": "Kopplig gschytteret",
-        "description": "D Kopplig mit {host} het nid funktioniert ({reason}).\n\nPrüef ar Maschine:\n\n- **Gang us em Yystelligsmenü use.** Ds Display muess der Startbiudschirm zeige; solang es Menü offe isch, cha d Maschine d Bestätigig nid abfrage.\n- Tue d J.O.E.-App zue.\n- Bestätig d Aafrag innert 60 Sekunde mit **OK**.\n\nProbier's de nomau.",
+        "description": "D Kopplig mit {host} het nid funktioniert ({reason}).\n\nPrüef a dr Maschine:\n\n- **Gang us em Yystelligsmenü use.** Ds Display muess dr Startbiudschirm zeige; solang es Menü offe isch, cha d Maschine d Bestätigig nid abfrage.\n- Tue d J.O.E.-App zue.\n- Bestätig d Aafrag innert 60 Sekunde mit **OK**.\n\nProbier's de nomau.",
         "data": {
           "pin": "PIN"
         },
         "data_description": {
-          "pin": "D Setup-PIN vor Maschine. Läär la, we keni gsetzt isch."
+          "pin": "Dr Setup-PIN vo dr Maschine. Läär la, we kes gsetzt isch."
         }
       },
       "article": {
         "title": "Weles Modäu isch es?",
-        "description": "Ds Modäu het nid vor Maschine chönne gläse wärde, meischtens wüu Home Assistant in em ne andere Netz isch aus der Stick. Gib d Artikunummere yy: Du fingsch se ir J.O.E.-App näbem Maschinename (zum Bischpiu 15833) und uf em Typeschiud ar Ungersyte vor Maschine. Läär la, für ds Modäu us ere Lyste uszwähle.",
+        "description": "Ds Modäu het nid vo dr Maschine chönne gläse wärde, meischtens wüu Home Assistant in em ne andere Netz isch aus dr Stick. Gib d Artikunummere yy: Du fingsch se i dr J.O.E.-App näbem Maschinename (zum Bischpiu 15833) u uf em Typeschiud a dr Ungersyte vo dr Maschine. Läär la, für ds Modäu us ere Lyste uszwähle.",
         "data": {
           "article_number": "Artikunummere"
         },
@@ -37,12 +37,12 @@
           "model": "Maschinemodäu"
         },
         "data_description": {
-          "model": "Der Modäuname mit der Länderusfüehrig, z. B. \"E8 (SDS)\". Tipp öppis yy, für d Lyste z dürsueche."
+          "model": "Dr Modäuname mit dr Länderusfüehrig, z. B. \"E8 (SDS)\". Tipp öppis yy, für d Lyste z dürsueche."
         }
       },
       "options": {
-        "title": "Bereich und Optione",
-        "description": "Wo steit d Maschine, und was söu Home Assistant aabiete? Aues ussert em Bereich chasch du speter über *Bearbeite* bi der Integration ändere.",
+        "title": "Bereich u Optione",
+        "description": "Wo steit d Maschine, u was söu Home Assistant aabiete? Aues ussert em Bereich chasch du speter über *Bearbeite* bi dr Integration ändere.",
         "data": {
           "area": "Bereich",
           "scan_interval": "Aktualisierigsintervall",
@@ -51,43 +51,43 @@
           "enable_settings": "Maschine-Yystellige"
         },
         "data_description": {
-          "area": "Freiwiuig. Ds Grät vor Maschine wird i däm Bereich aagleit, für dass aui Entitäte der Name vom Bereich trage. Das passiert nume einisch; für d Maschine speter z verschiebe, änder der Bereich vom Grät.",
-          "scan_interval": "Sekunde zwüsche zwo Abfrage. Der Stick nimmt nume ei Verbindig glychzytig aa, drum nid z töif yysteue.",
-          "enable_brewing": "Füegt pro Getränk e Chnopf derzue, wo's mit em Rezäpt zuebereitet, wo uf der Maschine gspycheret isch, so wie's am Display yygsteut isch. Steu vor em Drücke e Tasse drunger. Füegt o e Abbräche-Chnopf derzue und schautet d Aktion Mit Optione zuebereite frei.",
-          "enable_maintenance": "Füegt Chnöpf derzue, wo d Pflägprogramm vor Maschine starte (Reinigig, Entkaukig, Miuchsystem spüele, Kafisystem spüele, ...). D Bestätigige fragt d Maschine de uf irem Display ab; ds Kafisystem wird sofort gspüelt, drum e Tasse unger der Uslouf steue. Füegt o e Abbräche-Chnopf derzue.",
-          "enable_settings": "Füegt Entitäte für d Yystellige vor Maschine derzue (Wasserhärti, Usschautzyt, Sprach, ...). D Wärte wärde vor Maschine gläse und uf se gschribe; e Änderig bruucht e yygschauteti Maschine, wo grad nüt macht."
+          "area": "Freiwiuig. Ds Grät vo dr Maschine wird i däm Bereich aagleit, für dass aui Entitäte dr Name vom Bereich trage. Das passiert nume einisch; für d Maschine speter z verschiebe, änder dr Bereich vom Grät.",
+          "scan_interval": "Sekunde zwüsche zwo Abfrage. Dr Stick nimmt nume ei Verbindig glychzytig aa, drum nid z töif yysteue.",
+          "enable_brewing": "Füegt pro Getränk e Chnopf derzue, wo's mit em Rezäpt zuebereitet, wo uf dr Maschine gspycheret isch, so wie's am Display yygsteut isch. Steu vor em Drücke es Chacheli drunger. Füegt o e Abbräche-Chnopf derzue u schautet d Aktion Mit Optione zuebereite frei.",
+          "enable_maintenance": "Füegt Chnöpf derzue, wo d Pflägprogramm vo dr Maschine starte (Reinigong, Entkaukig, Miuchsystem spüele, Kafisystem spüele, ...). D Bestätigige fragt d Maschine de uf irem Display ab; ds Kafisystem wird sofort gspüelt, drum es Chacheli unger dr Kafiuslouf steue. Füegt o e Abbräche-Chnopf derzue.",
+          "enable_settings": "Füegt Entitäte für d Yystellige vo dr Maschine derzue (Wasserhärti, Usschautzyt, Sprach, ...). D Wärte wärde vo dr Maschine gläse u uf se gschribe; e Änderig bruucht e yygschauteti Maschine, wo grad nüt macht."
         }
       },
       "reauth_confirm": {
         "title": "Nomau koppele",
-        "description": "D Maschine unger {host} nimmt di gspycherete Zuegangsdate nümme aa. Schaut se yy, **gang us em Yystelligsmenü use** (ds Display muess der Startbiudschirm zeige) und tue d J.O.E.-App zue. Bestätig nach em Abschicke d Verbindigsaafrag uf em Display."
+        "description": "D Maschine unger {host} nimmt di gspycherete Zuegangsdate nümme aa. Schaut se yy, **gang us em Yystelligsmenü use** (ds Display muess dr Startbiudschirm zeige) u tue d J.O.E.-App zue. Bestätig nach em Abschicke d Verbindigsaafrag uf em Display."
       },
       "reconfigure": {
         "title": "Adrässe ändere",
-        "description": "Gib di nöii IP-Adrässe vom Wi-Fi-Connect-Stick yy.\n\nWe Home Assistant ds Modäu nid vor Maschine cha läse, wüu's in em ne andere Netz isch aus der Stick, de gib no d Artikunummere aa: Du fingsch se ir J.O.E.-App näbem Maschinename und uf em Typeschiud. Si muess zum yygrichtete Modäu ghöre.",
+        "description": "Gib di nöii IP-Adrässe vom Wi-Fi-Connect-Stick yy.\n\nWe Home Assistant ds Modäu nid vo dr Maschine cha läse, wüu's in em ne andere Netz isch aus dr Stick, de gib no d Artikunummere aa: Du fingsch se i dr J.O.E.-App näbem Maschinename u uf em Typeschiud. Si muess zum yygrichtete Modäu ghöre.",
         "data": {
           "host": "IP-Adrässe",
           "article_number": "Artikunummere"
         },
         "data_description": {
-          "article_number": "Freiwiuig, füf Ziffere. Läär la, de blybt der gspycheret Wärt."
+          "article_number": "Freiwiuig, füf Ziffere. Läär la, de blybt dr gspycheret Wärt."
         }
       }
     },
     "progress": {
-      "pair": "Lueg ufs Display vor Maschine unger {host} und bestätig d Verbindigsaafrag innert 60 Sekunde mit **OK**.\n\nKe Aafrag uf em Display? Gang ar Maschine us em Yystelligsmenü use (zrügg zum Startbiudschirm) und probier's nomau.",
-      "identify": "Ds Modäu wird vor Maschine unger {host} gläse…"
+      "pair": "Lueg ufs Display vo dr Maschine unger {host} u bestätig d Verbindigsaafrag innert 60 Sekunde mit **OK**.\n\nKe Aafrag uf em Display? Gang a dr Maschine us em Yystelligsmenü use (zrügg zum Startbiudschirm) u probier's nomau.",
+      "identify": "Ds Modäu wird vo dr Maschine unger {host} gläse…"
     },
     "error": {
-      "cannot_connect": "D Maschine het nid gantwortet. Isch si yygschautet und vo Home Assistant us erreichbar?",
+      "cannot_connect": "D Maschine het nid gantwortet. Isch si yygschautet u vo Home Assistant us erreichbar?",
       "invalid_auth": "D Maschine het di gspycherete Zuegangsdate abglehnt.",
-      "pairing_timeout": "D Verbindigsaafrag isch nid rächtzytig ar Maschine bestätiget worde. Gang us em Yystelligsmenü use, we eis offe isch, und probier's nomau.",
-      "pairing_rejected": "D Maschine het d Verbindigsaafrag abglehnt. Das passiert im Yystelligsmenü oder we d Maschine bschäftiget isch: Gang zrügg zum Startbiudschirm und probier's nomau.",
-      "machine_in_menu": "D Maschine isch im Yystelligsmenü und cha d Bestätigig nid abfrage. Gang us em Menü use (zrügg zum Startbiudschirm) und probier's nomau.",
-      "machine_busy": "D Maschine isch bschäftiget (Zuebereitig oder Pflägprogramm). Wart, bis si fertig isch, und probier's nomau.",
-      "wrong_pin": "D Maschine het d PIN abglehnt.",
-      "unknown_article": "Die Artikunummere isch nid ir Lyste vo de bekannte JURA-Maschine.",
-      "article_other_model": "Die Artikunummere ghört zum ne andere Maschinetyp aus em yygrichtete. Für ds Modäu z ändere, entfern d Integration und richt se nöi yy.",
+      "pairing_timeout": "D Verbindigsaafrag isch nid rächtzytig a dr Maschine bestätiget worde. Gang us em Yystelligsmenü use, we eis offe isch, u probier's nomau.",
+      "pairing_rejected": "D Maschine het d Verbindigsaafrag abglehnt. Das passiert im Yystelligsmenü oder we d Maschine bschäftiget isch: Gang zrügg zum Startbiudschirm u probier's nomau.",
+      "machine_in_menu": "D Maschine isch im Yystelligsmenü u cha d Bestätigig nid abfrage. Gang us em Menü use (zrügg zum Startbiudschirm) u probier's nomau.",
+      "machine_busy": "D Maschine isch bschäftiget (Zuebereitig oder Pflägprogramm). Wart, bis si fertig isch, u probier's nomau.",
+      "wrong_pin": "D Maschine het dr PIN abglehnt.",
+      "unknown_article": "Die Artikunummere isch nid i dr Lyste vo de bekannte JURA-Maschine.",
+      "article_other_model": "Die Artikunummere ghört zum ne andere Maschinetyp aus em yygrichtete. Für ds Modäu z ändere, entfern d Integration u richt se nöi yy.",
       "unknown": "Unerwartete Fähler, lueg im Log vo Home Assistant."
     },
     "abort": {
@@ -107,10 +107,10 @@
           "enable_settings": "Maschine-Yystellige"
         },
         "data_description": {
-          "scan_interval": "Sekunde zwüsche zwo Abfrage. Der Stick nimmt nume ei Verbindig glychzytig aa, drum nid z töif yysteue.",
-          "enable_brewing": "Füegt pro Getränk e Chnopf derzue, wo's mit em Rezäpt zuebereitet, wo uf der Maschine gspycheret isch, so wie's am Display yygsteut isch. Steu vor em Drücke e Tasse drunger. Füegt o e Abbräche-Chnopf derzue und schautet d Aktion Mit Optione zuebereite frei.",
-          "enable_maintenance": "Füegt Chnöpf derzue, wo d Pflägprogramm vor Maschine starte (Reinigig, Entkaukig, Miuchsystem spüele, Kafisystem spüele, ...). D Bestätigige fragt d Maschine de uf irem Display ab; ds Kafisystem wird sofort gspüelt, drum e Tasse unger der Uslouf steue. Füegt o e Abbräche-Chnopf derzue.",
-          "enable_settings": "Füegt Entitäte für d Yystellige vor Maschine derzue (Wasserhärti, Usschautzyt, Sprach, ...). D Wärte wärde vor Maschine gläse und uf se gschribe; e Änderig bruucht e yygschauteti Maschine, wo grad nüt macht."
+          "scan_interval": "Sekunde zwüsche zwo Abfrage. Dr Stick nimmt nume ei Verbindig glychzytig aa, drum nid z töif yysteue.",
+          "enable_brewing": "Füegt pro Getränk e Chnopf derzue, wo's mit em Rezäpt zuebereitet, wo uf dr Maschine gspycheret isch, so wie's am Display yygsteut isch. Steu vor em Drücke es Chacheli drunger. Füegt o e Abbräche-Chnopf derzue u schautet d Aktion Mit Optione zuebereite frei.",
+          "enable_maintenance": "Füegt Chnöpf derzue, wo d Pflägprogramm vo dr Maschine starte (Reinigong, Entkaukig, Miuchsystem spüele, Kafisystem spüele, ...). D Bestätigige fragt d Maschine de uf irem Display ab; ds Kafisystem wird sofort gspüelt, drum es Chacheli unger dr Kafiuslouf steue. Füegt o e Abbräche-Chnopf derzue.",
+          "enable_settings": "Füegt Entitäte für d Yystellige vo dr Maschine derzue (Wasserhärti, Usschautzyt, Sprach, ...). D Wärte wärde vo dr Maschine gläse u uf se gschribe; e Änderig bruucht e yygschauteti Maschine, wo grad nüt macht."
         }
       }
     }
@@ -124,24 +124,24 @@
       "drip_tray_missing": { "name": "Abtropfschale fäut" },
       "grounds_container_missing": { "name": "Kafisatzbehäuter fäut" },
       "beans_empty": { "name": "Bohnebehäuter läär" },
-      "cleaning_due": { "name": "Reinigig fäuig" },
+      "cleaning_due": { "name": "Reinigong fäuig" },
       "descaling_due": { "name": "Entkaukig fäuig" },
       "filter_change_due": { "name": "Fiuterwächsu fäuig" },
       "milk_rinse_due": { "name": "Miuchsystem-Spüelig fäuig" },
-      "milk_clean_due": { "name": "Miuchsystem-Reinigig fäuig" },
+      "milk_clean_due": { "name": "Miuchsystem-Reinigong fäuig" },
       "system_fill_needed": { "name": "System füue nötig" },
       "tap_open": { "name": "Hahne offe" },
       "front_cover_open": { "name": "Frontabdeckig offe" },
       "machine_error": { "name": "Maschinefähler" },
-      "outlet_missing": { "name": "Uslouf fäut" },
+      "outlet_missing": { "name": "Kafiuslouf fäut" },
       "rear_cover_missing": { "name": "Rückabdeckig fäut" },
-      "water_tank_removal_requested": { "name": "Wassertank-Entnahm verlangt" },
+      "water_tank_removal_requested": { "name": "Wassertank usenäh" },
       "ventilation_closed": { "name": "Lüftig zue" },
-      "powder_cover_open": { "name": "Puverschacht offe" },
+      "powder_cover_open": { "name": "Pouverschacht offe" },
       "filter_detected": { "name": "Fiuter erchennt" },
-      "keys_locked": { "name": "Taschte gsperrt" },
+      "keys_locked": { "name": "Chnöpf gsperrt" },
       "remote_screen_active": { "name": "Färnaazeig aktiv" },
-      "cleaning_recommended": { "name": "Reinigig empfohle" },
+      "cleaning_recommended": { "name": "Reinigong empfohle" },
       "descaling_recommended": { "name": "Entkaukig empfohle" },
       "filter_change_recommended": { "name": "Fiuterwächsu empfohle" }
     },
@@ -165,20 +165,20 @@
       "model": { "name": "Modäu" },
       "total_brews": { "name": "Totau Zuebereitige" },
       "product_brews": { "name": "Aazau {product}" },
-      "cleaning_need": { "name": "Reinigigsbedarf" },
+      "cleaning_need": { "name": "Reinigongsbedarf" },
       "descaling_need": { "name": "Entkaukigsbedarf" },
       "filter_wear": { "name": "Fiuterverbruuch" },
-      "cycles_cleaning": { "name": "Reinigige duregfüehrt" },
-      "cycles_descale": { "name": "Entkaukige duregfüehrt" },
-      "cycles_filter_change": { "name": "Fiuterwächsu duregfüehrt" },
-      "cycles_milk_rinse": { "name": "Miuchsystem-Spüelige duregfüehrt" },
-      "cycles_coffee_rinse": { "name": "Kafisystem-Spüelige duregfüehrt" },
-      "cycles_milk_clean": { "name": "Miuchsystem-Reinigige duregfüehrt" }
+      "cycles_cleaning": { "name": "Reinigong düregfüehrt" },
+      "cycles_descale": { "name": "Entkaukige düregfüehrt" },
+      "cycles_filter_change": { "name": "Fiuterwächsu düregfüehrt" },
+      "cycles_milk_rinse": { "name": "Miuchsystem-Spüelige düregfüehrt" },
+      "cycles_coffee_rinse": { "name": "Kafisystem-Spüelige düregfüehrt" },
+      "cycles_milk_clean": { "name": "Miuchsystem-Reinigong düregfüehrt" }
     },
     "button": {
       "brew": { "name": "{product} zuebereite" },
       "cancel": { "name": "Aktuelli Aktion abbräche" },
-      "start_cleaning": { "name": "Reinigig starte" },
+      "start_cleaning": { "name": "Reinigong starte" },
       "start_descale": { "name": "Entkaukig starte" },
       "start_filter_change": { "name": "Fiuterwächsu starte" },
       "start_cappu_rinse": { "name": "Miuchsystem spüele" },
@@ -294,7 +294,7 @@
   "services": {
     "brew": {
       "name": "Mit Optione zuebereite",
-      "description": "Bereitet ds Getränk vom ne Zuebereitigs-Chnopf zue und änderet derbi einzelni Parameter vo sym Rezäpt, nume für das Getränk. Was nid aagäh wird, blybt so, wie's uf der Maschine gspycheret isch. Steu vorhär e Tasse drunger.",
+      "description": "Bereitet ds Getränk vom ne Zuebereitigs-Chnopf zue u änderet derbi einzelni Parameter vo sym Rezäpt, nume für das Getränk. Was nid aagäh wird, blybt so, wie's uf dr Maschine gspycheret isch. Steu vorhär es Chacheli drunger.",
       "fields": {
         "strength": {
           "name": "Stärchi",
@@ -306,7 +306,7 @@
         },
         "temperature": {
           "name": "Temperatur",
-          "description": "Brüejtemperatur."
+          "description": "Brüetemperatur."
         },
         "milk_foam_time": {
           "name": "Miuchschuumzyt",
@@ -314,15 +314,15 @@
         },
         "milk_break": {
           "name": "Miuchpouse",
-          "description": "Sekunde Pouse zwüsche der Miuch und em Kafi."
+          "description": "Sekunde Pouse zwüsche dr Miuch u em Kafi."
         },
         "bypass": {
           "name": "Bypass",
-          "description": "Milliliter Wasser, wo am Kafi verbylouffe, wie bim Americano."
+          "description": "Milliliter Wasser, wo am Kafi verbyloufe, wie bim Americano."
         },
         "extraction": {
           "name": "Extraktion",
-          "description": "Heissi oder chauti Extraktion (Cold Brew). Chaut bruucht e Maschine und es Getränk, wo se aabiete, öppe d Kafigetränk vor Z10."
+          "description": "Heissi oder chauti Extraktion (Cold Brew). Chaut bruucht e Maschine u es Getränk, wo se aabiete, öppe d Kafigetränk vo dr Z10."
         }
       }
     }
@@ -332,7 +332,7 @@
       "message": "D Maschine het di gspycherete Zuegangsdate abglehnt. Bitte nomau koppele."
     },
     "update_failed": {
-      "message": "Unerwarteti Antwort vor Maschine: {error}"
+      "message": "Unerwarteti Antwort vo dr Maschine: {error}"
     },
     "unknown_machine_type": {
       "message": "Kes Profiu für Maschinetyp {machine_type}."
@@ -365,7 +365,7 @@
       "message": "{product} het ke Option {option} zum Yysteue."
     },
     "brew_option_range": {
-      "message": "{option} muess für {product} zwüsche {minimum} und {maximum} lige."
+      "message": "{option} muess für {product} zwüsche {minimum} u {maximum} lige."
     },
     "brew_option_step": {
       "message": "{option} muess für {product} {minimum} plus es Vielfachs vo {step} sy."
@@ -374,10 +374,10 @@
       "message": "{option} muess für {product} eine vo dene Wärte sy: {allowed}."
     },
     "brew_extraction_unsupported": {
-      "message": "{product} cha uf dere Maschine nid mit der Extraktion {extraction} zuebereitet wärde."
+      "message": "{product} cha uf dere Maschine nid mit dr Extraktion {extraction} zuebereitet wärde."
     },
     "brew_option_conflict": {
-      "message": "{option} cha für {product} mit der Extraktion {extraction} nid gsetzt wärde."
+      "message": "{option} cha für {product} mit dr Extraktion {extraction} nid gsetzt wärde."
     }
   }
 }
